@@ -1,0 +1,8 @@
+/.stack-work/
+/inertia.cabal
+/protos/
+/gen-bin/
+/api/
+/*.pem
+/*.csr
+*~

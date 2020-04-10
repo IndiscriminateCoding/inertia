@@ -1,0 +1,87 @@
+name: inertia
+version: 0.0.1
+github: "IndiscriminateCoding/inertia"
+# license: ???
+author: "IndiscriminateCoding"
+maintainer: "28496046+IndiscriminateCoding@users.noreply.github.com"
+copyright: "2020 github.com/IndiscriminateCoding"
+
+description: Please see the README on GitHub at <https://github.com/IndiscriminateCoding/inertia>
+
+default-extensions:
+- DataKinds
+- DeriveGeneric
+- DeriveTraversable
+- GeneralizedNewtypeDeriving
+- NumericUnderscores
+- OverloadedStrings
+- RecordWildCards
+- TupleSections
+- TypeApplications
+
+dependencies:
+- aeson
+- aeson-better-errors
+- base
+- containers
+- exceptions
+- hslogger
+- http2-grpc-proto-lens
+- http2-grpc-types
+- lens-family
+- optparse-applicative
+- proto-lens >= 0.6
+- proto-lens-runtime >= 0.6
+- text
+- warp
+- warp-tls
+- warp-grpc
+- yaml
+- unordered-containers
+- vector
+- wai
+
+library:
+  ghc-options:
+  - -O2
+  - -Wcompat
+  - -Wincomplete-record-updates
+  - -Wincomplete-patterns
+  - -Wincomplete-uni-patterns
+  - -Wredundant-constraints
+  source-dirs:
+  - src
+  - api
+
+executables:
+  inertia-exe:
+    main: Main.hs
+    source-dirs: app
+    ghc-options:
+    - -O2
+    - -Wcompat
+    - -Wincomplete-record-updates
+    - -Wincomplete-patterns
+    - -Wincomplete-uni-patterns
+    - -Wredundant-constraints
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - inertia
+
+tests:
+  inertia-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+    - -Wcompat
+    - -Wincomplete-record-updates
+    - -Wincomplete-patterns
+    - -Wincomplete-uni-patterns
+    - -Wredundant-constraints
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - inertia

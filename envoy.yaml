@@ -1,0 +1,38 @@
+dynamic_resources:
+  lds_config: { ads: {} }
+  cds_config: { ads: {} }
+  ads_config:
+    api_type: GRPC
+    transport_api_version: V2
+    grpc_services:
+      envoy_grpc:
+        cluster_name: ads
+static_resources:
+  clusters:
+  - name: ads
+    connect_timeout: 1s
+    type: static
+    lb_policy: random
+    http2_protocol_options:
+      allow_connect: true
+    transport_socket:
+      name: envoy.transport_sockets.tls
+    load_assignment:
+      cluster_name: ads
+      endpoints:
+      - lb_endpoints:
+          endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 3001
+admin:
+  access_log_path: /dev/null
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8081
+node:
+  id: node-id
+  cluster: node-cluster
+

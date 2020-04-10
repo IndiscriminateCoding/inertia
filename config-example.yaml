@@ -1,0 +1,43 @@
+ads:
+  host: localhost
+  port: 3001
+  certificate: ./certificate.pem
+  key: ./key.pem
+
+destinations:
+  my-service:
+    discovery: static
+    hosts:
+    - host: 127.0.0.1
+      port: 82
+    - host: 127.0.0.1
+      port: 83
+  google:
+    discovery: strict_dns
+    name: google.com
+
+listeners:
+  default:
+    host: 0.0.0.0
+    port: 9000
+    http:
+    - when:
+        authority: { value: google.com }
+      then:
+        # conditions could be nested
+      - when:
+          path: { prefix: /search }
+        then:
+        - destination: google
+    - when:
+        all:
+        - method: { value: GET }
+        - path:
+            prefix: /my-svc/
+        - not:
+            header:
+              name: x-route-to
+              prefix: 'proxy-'
+      then:
+        # you could omit array when using single element
+        destination: my-service
