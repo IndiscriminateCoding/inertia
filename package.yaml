@@ -12,6 +12,7 @@ default-extensions:
 - DataKinds
 - DeriveGeneric
 - DeriveTraversable
+- DuplicateRecordFields
 - GeneralizedNewtypeDeriving
 - NumericUnderscores
 - OverloadedStrings

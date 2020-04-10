@@ -1,23 +1,18 @@
 module Config( AdsConfig(..), Config(..), fileConfig ) where
 
 import Control.Exception( throw )
-import Data.Aeson
-  ( FromJSON
-  , Value(Array, Object)
-  , eitherDecodeFileStrict
-  , parseJSON
-  , withObject
-  , (.:)
-  , (.:?) )
-import Data.List( isSuffixOf )
+import Data.Aeson( FromJSON(..), eitherDecodeFileStrict )
+import Data.Aeson.BetterErrors
+import Data.Functor( ($>) )
+import Data.List( foldl', isSuffixOf )
 import Data.Map.Strict( Map )
-import Data.Maybe( fromMaybe )
 import Data.Text( Text )
-import Data.Vector( toList )
 import Data.Yaml( decodeFileEither )
 
+import qualified Data.Aeson.BetterErrors as A
 import qualified Data.HashMap.Strict as H
 import qualified Data.Map.Strict as M
+import qualified Data.Text as T
 
 import Ast
 
@@ -34,11 +29,7 @@ data Config = Config
   , adsConfig :: AdsConfig }
 
 instance FromJSON Config where
-  parseJSON = withObject "Config" $ \o -> do
-    dsts <- o .: "destinations" >>= traverse parseDestination
-    lsts <- o .: "listeners" >>= traverse parseListener
-    ads <- parseAdsConfig (fromMaybe (Object H.empty) (H.lookup "ads" o))
-    pure (Config dsts lsts ads)
+  parseJSON = toAesonParser id asConfig
 
 data AdsConfig = AdsConfig
   { host :: String
@@ -46,100 +37,114 @@ data AdsConfig = AdsConfig
   , certificate :: String
   , key :: String }
 
-parseField p o k = maybe
-  (fail $ "key " ++ show k ++ " not found")
-  p
-  (H.lookup k o)
+defaultAdsConfig = AdsConfig "0.0.0.0" 8080 "certificate.pem" "key.pem"
 
-parseOptList (Array a) = fmap toList (traverse parseJSON a)
-parseOptList x = fmap pure (parseJSON x)
+allowedKeys :: Monad m => [Text] -> ParseT Text m ()
+allowedKeys keys = do
+  o <- asObject
+  case filter (not . flip elem keys) (H.keys o) of
+    [] -> pure ()
+    xs -> throwCustomError ("Unexpected keys: " <> T.intercalate ", " xs)
 
-parseAdsConfig = withObject "AdsConfig" $ \o -> do
-  h <- o .:? "host"
-  p <- o .:? "port"
-  c <- o .:? "certificate"
-  k <- o .:? "key"
-  pure $ AdsConfig
-    (fromMaybe "0.0.0.0" h)
-    (fromMaybe 3000 p)
-    (fromMaybe "certificate.pem" c)
-    (fromMaybe "key.pem" k)
+asMap :: Monad m => ParseT e m a -> ParseT e m (Map Text a)
+asMap p = fmap M.fromList (eachInObject p)
 
-parseDestination = withObject "Destination" $ \o -> do
-  d <- o .: "discovery"
-  case d :: Text of
-    "static" -> do
-      hosts <- parseField parseOptList o "hosts"
-      fmap Static $ traverse
-        (withObject "Host" $ \h -> do
-          host <- h .: "host"
-          port <- h .: "port"
-          pure (host, port)
-        )
-        hosts
-    "strict_dns" -> fmap StrictDns (o .: "name")
-    "logical_dns" -> fmap LogicalDns (o .: "name")
-    _ -> fail ("Unknown discovery type: " ++ show d)
+asOptList :: Monad m => ParseT e m a -> ParseT e m [a]
+asOptList p = fmap (:[]) p <|> eachInArray p
 
-parseListener = withObject "Listener" $ \o -> do
-  host <- o .:? "host"
-  port <- o .: "port"
-  http <- parseField parseOptList o "http"
-  let f [] = pure NoRoute
-      f (v : vs) = withObject "Routes" (\o ->
-        case (H.lookup "when" o, H.lookup "then" o, H.lookup "destination" o) of
-          (Just w, Just t, Nothing) -> do
-            w <- parseCondition w
-            t <- parseOptList t >>= f
-            fmap (When w t) (f vs)
-          (Nothing, Nothing, Just d) -> fmap Dst (parseJSON d)
-          _ -> fail "You should specify either (when/then) or destination"
-        ) v
-  routes <- f http
-  pure (Listener (fromMaybe "0.0.0.0" host) port routes)
+asNonEmptyList :: Monad m => ParseT Text m a -> ParseT Text m (a, [a])
+asNonEmptyList p = asOptList p >>= nel
+  where
+    nel [] = throwCustomError "List is empty"
+    nel (h:t) = pure (h, t)
 
-parseCondition = withObject "Condition" $ \o ->
-  case
-    ( H.lookup "not" o
-    , H.lookup "all" o
-    , H.lookup "any" o
-    , H.lookup "openapi" o
-    , H.lookup "authority" o
-    , H.lookup "method" o
-    , H.lookup "path" o
-    , H.lookup "header" o ) of
-    (Just n, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing) ->
-      fmap Not (parseCondition n)
-    (Nothing, Just a, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing) ->
-      let f [] = fail "All: empty"
-          f [x] = parseCondition x
-          f (h:t) = do
-            h <- parseCondition h
-            fmap (And h) (f t) in
-      parseOptList a >>= f
-    (Nothing, Nothing, Just a, Nothing, Nothing, Nothing, Nothing, Nothing) ->
-      let f [] = fail "Any: empty"
-          f [x] = parseCondition x
-          f (h:t) = do
-            h <- parseCondition h
-            fmap (Or h) (f t) in
-      parseOptList a >>= f
-    (Nothing, Nothing, Nothing, Just o, Nothing, Nothing, Nothing, Nothing) ->
-      error "openapi matching isn't implemented"
-    (Nothing, Nothing, Nothing, Nothing, Just a, Nothing, Nothing, Nothing) ->
-      fmap (Match Authority) (parseMatcher a)
-    (Nothing, Nothing, Nothing, Nothing, Nothing, Just m, Nothing, Nothing) ->
-      fmap (Match Method) (parseMatcher m)
-    (Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Just p, Nothing) ->
-      fmap (Match Path) (parseMatcher p)
-    (Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Just h@(Object o)) -> do
-      name <- o .: "name"
-      matcher <- parseMatcher h
-      pure (Match (Header name) matcher)
-    _ -> fail "Can't parse (multiple matching keys?)"
+asConfig :: Monad m => ParseT Text m Config
+asConfig = do
+  destinations <- keyOrDefault "destinations" M.empty (asMap asDestination)
+  listeners <- keyOrDefault "listeners" M.empty (asMap $ asListener asRoutes)
+  adsConfig <- keyOrDefault "ads" defaultAdsConfig asAdsConfig
+  pure Config {..}
 
-parseMatcher = withObject "Matcher" $ \o ->
-  case (H.lookup "value" o, H.lookup "prefix" o) of
-    (Just v, Nothing) -> fmap Exact (parseJSON v)
-    (Nothing, Just p) -> fmap Prefix (parseJSON p)
-    _ -> fail "Exactly one of (value, prefix) should be specified"
+asAdsConfig :: Monad m => ParseT e m AdsConfig
+asAdsConfig = do
+  let AdsConfig{..} = defaultAdsConfig
+  h <- keyOrDefault "host" host asString
+  p <- keyOrDefault "port" port asIntegral
+  c <- keyOrDefault "certificate" certificate asString
+  k <- keyOrDefault "key" key asString
+  pure (AdsConfig h p c k)
+
+asDestination :: Monad m => ParseT Text m Destination
+asDestination = do
+  d <- A.key "discovery" asText
+  case d of
+    "static" -> fmap Static (A.key "hosts" (asOptList asHost))
+    "strict_dns" -> fmap StrictDns (A.key "name" asText)
+    "logical_dns" -> fmap LogicalDns (A.key "name" asText)
+    d -> throwCustomError ("can't parse destination: " <> d)
+  where
+    asHost = do
+      host <- A.key "host" asText
+      port <- A.key "port" asIntegral
+      pure (host, port)
+
+data ConfigRoute = ConfigDst Text | ConfigWhen Condition [ConfigRoute]
+
+asRoutes :: Monad m => ParseT Text m Routes
+asRoutes = fmap f (asOptList asConfigRoute)
+  where
+    f :: [ConfigRoute] -> Routes
+    f [] = NoRoute
+    f (ConfigDst d : _) = Dst d
+    f (ConfigWhen c rs : t) = When c (f rs) (f t)
+
+    asConfigRoute :: Monad m => ParseT Text m ConfigRoute
+    asConfigRoute = do
+      w <- keyMay "when" asCondition
+      d <- keyMay "destination" asText
+      case () of
+        _ | Just w <- w -> do
+          t <- A.key "then" (asOptList asConfigRoute)
+          _ <- allowedKeys ["when", "then"]
+          pure (ConfigWhen w t)
+        _ | Just d <- d -> allowedKeys ["destination"] $> (ConfigDst d)
+        _ -> throwCustomError "can't parse route"
+
+asListener :: Monad m => ParseT Text m r -> ParseT Text m (Listener r)
+asListener p = do
+  host <- keyOrDefault "host" "0.0.0.0" asText
+  port <- A.key "port" asIntegral
+  http <- A.key "http" p
+  _ <- allowedKeys ["host", "port", "http"]
+  pure (Listener host port http)
+
+asCondition :: Monad m => ParseT Text m Condition
+asCondition = do
+  not <- keyMay "not" asCondition
+  all <- keyMay "all" (asNonEmptyList asCondition)
+  any <- keyMay "any" (asNonEmptyList asCondition)
+  authority <- keyMay "authority" (asMatcher [])
+  method <- keyMay "method" (asMatcher [])
+  path <- keyMay "path" (asMatcher [])
+  header <- keyMay "header" (asMatcher ["name"])
+  case () of
+    _ | Just n <- not -> allowedKeys ["not"] $> Not n
+    _ | Just (x, xs) <- all -> allowedKeys ["all"] $> foldl' And x xs
+    _ | Just (x, xs) <- any -> allowedKeys ["any"] $> foldl' Or x xs
+    _ | Just a <- authority -> allowedKeys ["authority"] $> Match Authority a
+    _ | Just m <- method -> allowedKeys ["method"] $> Match Method m
+    _ | Just p <- path -> allowedKeys ["path"] $> Match Path p
+    _ | Just h <- header -> do
+      _ <- allowedKeys ["header"]
+      n <- A.key "header" . A.key "name" $ asText
+      pure (Match (Header n) h)
+    _ -> throwCustomError "can't parse asCondition"
+
+asMatcher :: Monad m => [Text] -> ParseT Text m Matcher
+asMatcher flds = do
+  v <- keyMay "value" asText
+  p <- keyMay "prefix" asText
+  case (v, p) of
+    (Just v, Nothing) -> allowedKeys ("value":flds) $> Exact v
+    (Nothing, Just p) -> allowedKeys ("prefix":flds) $> Prefix p
+    _ -> throwCustomError "Exactly one of [value, prefix] should be specified"
