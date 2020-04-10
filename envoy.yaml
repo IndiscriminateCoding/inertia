@@ -13,8 +13,7 @@ static_resources:
     connect_timeout: 1s
     type: static
     lb_policy: random
-    http2_protocol_options:
-      allow_connect: true
+    http2_protocol_options: {}
     transport_socket:
       name: envoy.transport_sockets.tls
     load_assignment:
