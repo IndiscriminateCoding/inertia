@@ -60,14 +60,16 @@ asNonEmptyList p = asOptList p >>= nel
 
 asConfig :: Monad m => ParseT Text m Config
 asConfig = do
+  _ <- allowedKeys ["destinations", "listeners", "ads"]
   destinations <- keyOrDefault "destinations" M.empty (asMap asDestination)
   listeners <- keyOrDefault "listeners" M.empty (asMap $ asListener asRoutes)
   adsConfig <- keyOrDefault "ads" defaultAdsConfig asAdsConfig
   pure Config {..}
 
-asAdsConfig :: Monad m => ParseT e m AdsConfig
+asAdsConfig :: Monad m => ParseT Text m AdsConfig
 asAdsConfig = do
   let AdsConfig{..} = defaultAdsConfig
+  _ <- allowedKeys ["host", "port", "certificate", "key"]
   h <- keyOrDefault "host" host asString
   p <- keyOrDefault "port" port asIntegral
   c <- keyOrDefault "certificate" certificate asString
@@ -78,12 +80,13 @@ asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
   d <- A.key "discovery" asText
   case d of
-    "static" -> fmap Static (A.key "hosts" (asOptList asHost))
-    "strict_dns" -> fmap StrictDns (A.key "name" asText)
-    "logical_dns" -> fmap LogicalDns (A.key "name" asText)
+    "static" -> fmap Static $ allowedKeys["discovery", "hosts"] >> A.key "hosts" (asOptList asHost)
+    "strict_dns" -> fmap StrictDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
+    "logical_dns" -> fmap LogicalDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
     d -> throwCustomError ("can't parse destination: " <> d)
   where
     asHost = do
+      _ <- allowedKeys ["host", "port"]
       host <- A.key "host" asText
       port <- A.key "port" asIntegral
       pure (host, port)
