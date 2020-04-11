@@ -13,7 +13,7 @@ destinations:
     - host: 127.0.0.1
       port: 83
   google:
-    discovery: strict_dns
+    discovery: strict-dns
     name: google.com
 
 listeners:

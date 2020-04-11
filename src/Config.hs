@@ -108,8 +108,8 @@ asDestination = do
   d <- A.key "discovery" asText
   case d of
     "static" -> fmap Static $ allowedKeys["discovery", "hosts"] >> A.key "hosts" (asOptList asHost)
-    "strict_dns" -> fmap StrictDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
-    "logical_dns" -> fmap LogicalDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
+    "strict-dns" -> fmap StrictDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
+    "logical-dns" -> fmap LogicalDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
     d -> throwCustomError ("can't parse destination: " <> d)
   where
     asHost = do
