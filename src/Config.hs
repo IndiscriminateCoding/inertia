@@ -1,7 +1,7 @@
 module Config( AdsConfig(..), Config(..), fileConfig ) where
 
 import Control.Exception( throw )
-import Data.Aeson( FromJSON(..), eitherDecodeFileStrict )
+import Data.Aeson( FromJSON(..), Value(Array), eitherDecodeFileStrict )
 import Data.Aeson.BetterErrors
 import Data.Functor( ($>) )
 import Data.List( foldl', isSuffixOf )
@@ -50,7 +50,10 @@ asMap :: Monad m => ParseT e m a -> ParseT e m (Map Text a)
 asMap p = fmap M.fromList (eachInObject p)
 
 asOptList :: Monad m => ParseT e m a -> ParseT e m [a]
-asOptList p = fmap (:[]) p <|> eachInArray p
+asOptList p = asValue >>= f
+  where
+    f (Array _) = eachInArray p
+    f _ = fmap (:[]) p
 
 asNonEmptyList :: Monad m => ParseT Text m a -> ParseT Text m (a, [a])
 asNonEmptyList p = asOptList p >>= nel
@@ -62,7 +65,8 @@ asConfig :: Monad m => ParseT Text m Config
 asConfig = do
   _ <- allowedKeys ["destinations", "listeners", "ads"]
   destinations <- keyOrDefault "destinations" M.empty (asMap asDestination)
-  listeners <- keyOrDefault "listeners" M.empty (asMap $ asListener asRoutes)
+  listeners <-
+    keyOrDefault "listeners" M.empty (asMap . asListener  . asRoutes $ M.keysSet destinations)
   adsConfig <- keyOrDefault "ads" defaultAdsConfig asAdsConfig
   pure Config {..}
 
@@ -93,8 +97,8 @@ asDestination = do
 
 data ConfigRoute = ConfigDst Text | ConfigWhen Condition [ConfigRoute]
 
-asRoutes :: Monad m => ParseT Text m Routes
-asRoutes = fmap f (asOptList asConfigRoute)
+asRoutes :: (Foldable f, Monad m) => f Text -> ParseT Text m Routes
+asRoutes dsts = fmap f (asOptList asConfigRoute)
   where
     f :: [ConfigRoute] -> Routes
     f [] = NoRoute
@@ -110,7 +114,10 @@ asRoutes = fmap f (asOptList asConfigRoute)
           t <- A.key "then" (asOptList asConfigRoute)
           _ <- allowedKeys ["when", "then"]
           pure (ConfigWhen w t)
-        _ | Just d <- d -> allowedKeys ["destination"] $> (ConfigDst d)
+        _ | Just d <- d ->
+          if elem d dsts
+          then allowedKeys ["destination"] $> (ConfigDst d)
+          else throwCustomError ("no such destination: " <> d)
         _ -> throwCustomError "can't parse route"
 
 asListener :: Monad m => ParseT Text m r -> ParseT Text m (Listener r)
