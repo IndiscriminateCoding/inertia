@@ -3,6 +3,18 @@ module Config( AdsConfig(..), Config(..), fileConfig ) where
 import Control.Exception( throw )
 import Data.Aeson( FromJSON(..), Value(Array), eitherDecodeFileStrict )
 import Data.Aeson.BetterErrors
+  ( ParseT
+  , asIntegral
+  , asObject
+  , asString
+  , asText
+  , asValue
+  , eachInArray
+  , eachInObject
+  , keyOrDefault
+  , keyMay
+  , throwCustomError
+  , toAesonParser )
 import Data.Functor( ($>) )
 import Data.List( foldl', isSuffixOf )
 import Data.Map.Strict( Map )
@@ -38,6 +50,17 @@ data AdsConfig = AdsConfig
   , key :: String }
 
 defaultAdsConfig = AdsConfig "0.0.0.0" 8080 "certificate.pem" "key.pem"
+
+{- keyOrDefault :: Monad m => Text -> a -> ParseT e m a -> ParseT e m a
+keyOrDefault n def p = do
+  v <- A.keyMay n asValue
+  case v of
+    Nothing -> pure def
+    Just Null -> pure def
+    Just _ -> A.key n p
+
+keyMay :: Monad m => Text -> ParseT e m a -> ParseT e m (Maybe a)
+keyMay n p = keyOrDefault n Nothing (fmap Just p) -}
 
 allowedKeys :: Monad m => [Text] -> ParseT Text m ()
 allowedKeys keys = do
