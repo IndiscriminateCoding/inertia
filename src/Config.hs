@@ -172,6 +172,7 @@ asListener p = do
 
 asCondition :: Monad m => ParseT Text m Condition
 asCondition = do
+  _ <- allowedKeys ["not", "all", "any", "authority", "method", "path", "header"]
   not <- keyMay "not" asCondition
   all <- keyMay "all" (asNonEmptyList asCondition)
   any <- keyMay "any" (asNonEmptyList asCondition)
@@ -190,7 +191,7 @@ asCondition = do
       _ <- allowedKeys ["header"]
       n <- A.key "header" . A.key "name" $ asText
       pure (Match (Header n) h)
-    _ -> throwCustomError "can't parse asCondition"
+    _ -> throwCustomError "can't parse condition"
 
 asMatcher :: Monad m => [Text] -> ParseT Text m Matcher
 asMatcher flds = do
