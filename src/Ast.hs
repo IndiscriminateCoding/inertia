@@ -6,10 +6,12 @@ import Data.Function( (&) )
 import Data.Maybe( isJust )
 import Data.Text( Text, toCaseFold )
 
-data Destination
-  = Static [(Text, Int)]
-  | StrictDns Text
-  | LogicalDns Text
+data Discovery = Static | StrictDns | LogicalDns
+  deriving Show
+
+data Destination = Destination
+  { discovery :: Discovery
+  , hosts :: [(Text, Int)] }
   deriving Show
 
 data Listener r = Listener

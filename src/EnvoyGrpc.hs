@@ -197,13 +197,11 @@ renderClusters ds = defMessage
         ) hs
       ]
 
+    clusterType :: Discovery -> ClusterV2.Cluster
+    clusterType Static = defMessage & field @"type'" .~ ClusterV2.Cluster'STATIC
+    clusterType StrictDns = defMessage & field @"type'" .~ ClusterV2.Cluster'STRICT_DNS
+    clusterType LogicalDns = defMessage & field @"type'" .~ ClusterV2.Cluster'LOGICAL_DNS
+
     cluster :: Text -> Destination -> ClusterV2.Cluster
-    cluster name (StrictDns t) = defMessage
-      & field @"type'" .~ ClusterV2.Cluster'STRICT_DNS
-      & field @"loadAssignment" .~ loadAssignment name [(t, 80)]
-    cluster name (LogicalDns t) = defMessage
-      & field @"type'" .~ ClusterV2.Cluster'LOGICAL_DNS
-      & field @"loadAssignment" .~ loadAssignment name [(t, 80)]
-    cluster name (Static hs) = defMessage
-      & field @"type'" .~ ClusterV2.Cluster'STATIC
-      & field @"loadAssignment" .~ loadAssignment name hs
+    cluster name Destination{..} =
+      clusterType discovery & field @"loadAssignment" .~ loadAssignment name hosts

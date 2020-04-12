@@ -118,18 +118,24 @@ asAdsConfig = do
 
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
-  d <- A.key "discovery" asText
-  case d of
-    "static" -> fmap Static $ allowedKeys["discovery", "hosts"] >> A.key "hosts" (asOptList asHost)
-    "strict-dns" -> fmap StrictDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
-    "logical-dns" -> fmap LogicalDns $ allowedKeys ["discovery", "name"] >> A.key "name" asText
-    d -> throwCustomError ("can't parse destination: " <> d)
+  _ <- allowedKeys ["discovery", "hosts"]
+  d <- A.key "discovery" asDiscovery
+  hs <- A.keyOrDefault "hosts" [] (asOptList asHost)
+  pure (Destination d hs)
   where
     asHost = do
       _ <- allowedKeys ["host", "port"]
       host <- A.key "host" asText
       port <- A.key "port" asPort
       pure (host, port)
+
+asDiscovery :: Monad m => ParseT Text m Discovery
+asDiscovery = asText >>= f
+  where
+    f "static" = pure Static
+    f "strict-dns" = pure StrictDns
+    f "logical-dns" = pure LogicalDns
+    f s = throwCustomError ("can't parse discovery: " <> s)
 
 data ConfigRoute = ConfigDst Text | ConfigWhen Condition [ConfigRoute]
 
