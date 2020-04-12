@@ -4,27 +4,6 @@ ads:
   certificate: ./certificate.pem
   key: ./key.pem
 
-defaults:
-  # cluster
-  connect-timeout: 5
-  load-balancer:
-    least-request:
-      choice-count: 2
-  circuit-breaker:
-    max-connections: 1024
-    max-pending-requests: 1024
-    max-requests: 1024
-    max-retries: 3
-#  outlier_detection: ???
-#  http_options: ???
-#  transport_socket: ??? # just 'sni'
-#  metadata: ??? # cluster-only?
-#  protocol_selection: ??? # h1/h2/downstream
-#  tcp_keepalive: ???
-  # route
-#  timeout: 1s
-#  retry_policy: ???
-
 destinations:
   my-service:
     discovery: static

@@ -70,6 +70,18 @@ allowedKeys keys = do
     Just k -> throwCustomError $
       "Unexpected key " <> k <> ", allowed: [" <> T.intercalate "," keys <> "]"
 
+asPercent :: Monad m => ParseT Text m Int
+asPercent = asIntegral >>= f
+  where
+    f n | 0 <= n && n <= 100 = pure n
+    f n = throwCustomError ("percent is out of range: " <> T.pack (show n))
+
+asPort :: Monad m => ParseT Text m Int
+asPort = asIntegral >>= f
+  where
+    f n | 0 < n && n < 65536 = pure n
+    f n = throwCustomError ("port is out of range: " <> T.pack (show n))
+
 asMap :: Monad m => ParseT e m a -> ParseT e m (Map Text a)
 asMap p = fmap M.fromList (eachInObject p)
 
@@ -99,7 +111,7 @@ asAdsConfig = do
   let AdsConfig{..} = defaultAdsConfig
   _ <- allowedKeys ["host", "port", "certificate", "key"]
   h <- keyOrDefault "host" host asString
-  p <- keyOrDefault "port" port asIntegral
+  p <- keyOrDefault "port" port asPort
   c <- keyOrDefault "certificate" certificate asString
   k <- keyOrDefault "key" key asString
   pure (AdsConfig h p c k)
@@ -116,7 +128,7 @@ asDestination = do
     asHost = do
       _ <- allowedKeys ["host", "port"]
       host <- A.key "host" asText
-      port <- A.key "port" asIntegral
+      port <- A.key "port" asPort
       pure (host, port)
 
 data ConfigRoute = ConfigDst Text | ConfigWhen Condition [ConfigRoute]
@@ -147,7 +159,7 @@ asRoutes dsts = fmap f (asOptList asConfigRoute)
 asListener :: Monad m => ParseT Text m r -> ParseT Text m (Listener r)
 asListener p = do
   host <- keyOrDefault "host" "0.0.0.0" asText
-  port <- A.key "port" asIntegral
+  port <- A.key "port" asPort
   http <- A.key "http" p
   _ <- allowedKeys ["host", "port", "http"]
   pure (Listener host port http)
