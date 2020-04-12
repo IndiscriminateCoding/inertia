@@ -16,7 +16,7 @@ import Data.Aeson.BetterErrors
   , throwCustomError
   , toAesonParser )
 import Data.Functor( ($>) )
-import Data.List( foldl', isSuffixOf )
+import Data.List( find, foldl', isSuffixOf )
 import Data.Map.Strict( Map )
 import Data.Text( Text )
 import Data.Yaml( decodeFileEither )
@@ -65,9 +65,10 @@ keyMay n p = keyOrDefault n Nothing (fmap Just p) -}
 allowedKeys :: Monad m => [Text] -> ParseT Text m ()
 allowedKeys keys = do
   o <- asObject
-  case filter (not . flip elem keys) (H.keys o) of
-    [] -> pure ()
-    xs -> throwCustomError ("Unexpected keys: " <> T.intercalate ", " xs)
+  case find (not . flip elem keys) (H.keys o) of
+    Nothing -> pure ()
+    Just k -> throwCustomError $
+      "Unexpected key " <> k <> ", allowed: [" <> T.intercalate "," keys <> "]"
 
 asMap :: Monad m => ParseT e m a -> ParseT e m (Map Text a)
 asMap p = fmap M.fromList (eachInObject p)
