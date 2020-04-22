@@ -26,5 +26,6 @@ parseDuration t = do
     _ -> Nothing
   where
     (val, unit) = T.foldl split ([], []) t
+    split (v, u) ' ' = (v, u)
     split (v, u) c | isDigit c = (c:v, u)
     split (v, u) c = (v, c:u)
