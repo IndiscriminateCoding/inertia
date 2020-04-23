@@ -6,7 +6,7 @@ import Text.Read( readMaybe )
 import qualified Data.Text as T
 
 newtype Duration = Duration { toMillis :: Integer }
-  deriving (Eq, Num)
+  deriving (Show, Eq, Num)
 
 toSeconds :: Duration -> Integer
 toSeconds = (`div` 1000) . toMillis

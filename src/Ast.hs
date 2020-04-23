@@ -6,12 +6,15 @@ import Data.Function( (&) )
 import Data.Maybe( isJust )
 import Data.Text( Text, toCaseFold )
 
+import Duration( Duration )
+
 data Discovery = Static | StrictDns | LogicalDns
   deriving Show
 
 data Destination = Destination
   { discovery :: Discovery
-  , hosts :: [(Text, Int)] }
+  , hosts :: [(Text, Int)]
+  , connectTimeout :: Duration }
   deriving Show
 
 data Listener r = Listener

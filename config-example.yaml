@@ -96,6 +96,7 @@ destinations:
       port: 82
     - host: 127.0.0.1
       port: 83
+    connect-timeout: 333ms
   google:
     discovery: strict-dns
     hosts:

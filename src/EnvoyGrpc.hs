@@ -42,10 +42,12 @@ import qualified Proto.Envoy.Api.V2.Core.Address as AddressV2
 import qualified Proto.Envoy.Api.V2.Route.RouteComponents as RouteV2
 import qualified Proto.Envoy.Api.V2.Cluster as ClusterV2
 import qualified Proto.Envoy.Api.V2.Listener as ListenerV2
+import qualified Proto.Google.Protobuf.Duration as PB
 import qualified System.Log.Logger as L
 
 import Ast
 import Config( AdsConfig(..) )
+import Duration
 
 runServer
   :: AdsConfig
@@ -179,7 +181,7 @@ renderClusters ds = defMessage
       & field @"typeUrl" .~ clusterUrl
       & field @"value" .~ encodeMessage (cluster name dst
         & field @"name" .~ name
-        & field @"connectTimeout" .~ (defMessage & field @"seconds" .~ 5)
+        & field @"connectTimeout" .~ protobufDuration (connectTimeout dst)
       )
 
     loadAssignment name hs = (defMessage :: ClusterLoadAssignment)
@@ -205,3 +207,11 @@ renderClusters ds = defMessage
     cluster :: Text -> Destination -> ClusterV2.Cluster
     cluster name Destination{..} =
       clusterType discovery & field @"loadAssignment" .~ loadAssignment name hosts
+
+protobufDuration :: Duration -> PB.Duration
+protobufDuration (Duration ms) = defMessage
+  & field @"seconds" .~ fromInteger seconds
+  & field @"nanos" .~ fromInteger nanos
+  where
+    seconds = ms `div` 1000
+    nanos = (ms - seconds * 1000) * 1_000_000

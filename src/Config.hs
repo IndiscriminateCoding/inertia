@@ -27,6 +27,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 
 import Ast
+import Duration
 
 fileConfig :: FilePath -> IO Config
 fileConfig path | ".json" `isSuffixOf` path =
@@ -69,6 +70,15 @@ allowedKeys keys = do
     Nothing -> pure ()
     Just k -> throwCustomError $
       "Unexpected key " <> k <> ", allowed: [" <> T.intercalate "," keys <> "]"
+
+asDuration :: Monad m => ParseT Text m Duration
+asDuration = asText >>= f
+  where
+    f t =
+      case parseDuration t of
+        Just (Duration ms) | ms > 315_576_000_000_000 -> throwCustomError "Duration is to large"
+        Just d -> pure d
+        Nothing -> throwCustomError ("can't parse duration: " <> t)
 
 asPercent :: Monad m => ParseT Text m Int
 asPercent = asIntegral >>= f
@@ -118,10 +128,11 @@ asAdsConfig = do
 
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
-  _ <- allowedKeys ["discovery", "hosts"]
+  _ <- allowedKeys ["discovery", "hosts", "connect-timeout"]
   d <- A.key "discovery" asDiscovery
   hs <- A.keyOrDefault "hosts" [] (asOptList asHost)
-  pure (Destination d hs)
+  ct <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
+  pure (Destination d hs ct)
   where
     asHost = do
       _ <- allowedKeys ["host", "port"]
