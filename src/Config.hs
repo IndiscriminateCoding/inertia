@@ -126,13 +126,29 @@ asAdsConfig = do
   k <- keyOrDefault "key" key asString
   pure (AdsConfig h p c k)
 
+asLoadBalancer :: Monad m => ParseT Text m LoadBalancer
+asLoadBalancer = do
+  _ <- allowedKeys ["least-request", "random", "round-robin"]
+  lr <- A.keyMay "least-request" asChoiceCount
+  rd <- A.keyMay "random" (allowedKeys [])
+  rr <- A.keyMay "round-robin" (allowedKeys [])
+  case () of
+    _ | Just lr <- lr -> allowedKeys ["least-request"] $> LeastRequest lr
+    _ | Just () <- rd -> allowedKeys ["random"] $> Random
+    _ | Just () <- rr -> allowedKeys ["round-robin"] $> RoundRobin
+    _ -> throwCustomError "can't parse load-balancer"
+  where
+    asChoiceCount :: Monad m => ParseT Text m Int
+    asChoiceCount = allowedKeys ["choice-count"] *> A.keyOrDefault "choice-count" 2 asIntegral
+
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
-  _ <- allowedKeys ["discovery", "hosts", "connect-timeout"]
+  _ <- allowedKeys ["discovery", "hosts", "connect-timeout", "load-balancer"]
   d <- A.key "discovery" asDiscovery
   hs <- A.keyOrDefault "hosts" [] (asOptList asHost)
   ct <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
-  pure (Destination d hs ct)
+  lb <- A.keyOrDefault "load-balancer" (LeastRequest 2) asLoadBalancer
+  pure (Destination d hs ct lb)
   where
     asHost = do
       _ <- allowedKeys ["host", "port"]

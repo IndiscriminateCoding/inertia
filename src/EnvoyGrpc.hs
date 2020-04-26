@@ -177,12 +177,26 @@ renderClusters ds = defMessage
   & field @"resources" .~ map f (M.toList ds)
   where
     f :: (Text, Destination) -> Any
-    f (name, dst) = defMessage
+    f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
-      & field @"value" .~ encodeMessage (cluster name dst
+      & field @"value" .~ encodeMessage (addLbConfig loadBalancer $ cluster name dst
         & field @"name" .~ name
-        & field @"connectTimeout" .~ protobufDuration (connectTimeout dst)
+        & field @"connectTimeout" .~ protobufDuration connectTimeout
+        & field @"lbPolicy" .~ lbPolicy loadBalancer
       )
+
+    addLbConfig :: LoadBalancer -> ClusterV2.Cluster -> ClusterV2.Cluster
+    addLbConfig (LeastRequest n) c = c
+      & field @"leastRequestLbConfig" .~ (defMessage
+        & field @"choiceCount" .~ (defMessage
+          & field @"value" .~ fromIntegral n
+        )
+      )
+    addLbConfig _ c = c
+
+    lbPolicy (LeastRequest _) = ClusterV2.Cluster'LEAST_REQUEST
+    lbPolicy Random = ClusterV2.Cluster'RANDOM
+    lbPolicy RoundRobin = ClusterV2.Cluster'ROUND_ROBIN
 
     loadAssignment name hs = (defMessage :: ClusterLoadAssignment)
       & field @"clusterName" .~ name

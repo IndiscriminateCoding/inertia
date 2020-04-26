@@ -9,25 +9,24 @@ import Data.Text( Text, toCaseFold )
 import Duration( Duration )
 
 data Discovery = Static | StrictDns | LogicalDns
-  deriving Show
 
 data Destination = Destination
   { discovery :: Discovery
   , hosts :: [(Text, Int)]
-  , connectTimeout :: Duration }
-  deriving Show
+  , connectTimeout :: Duration
+  , loadBalancer :: LoadBalancer }
+
+data LoadBalancer = LeastRequest Int | Random | RoundRobin
 
 data Listener r = Listener
   { host :: Text
   , port :: Int
   , http :: r }
-  deriving Show
 
 data Routes
   = NoRoute
   | Dst Text
   | When { cond :: Condition, matched :: Routes, unmatched :: Routes }
-  deriving Show
 
 data Condition
   = Never
@@ -50,7 +49,6 @@ data Rule = Rule
   , path :: Maybe Matcher
   , headers :: [(Text, Matcher)]
   , action :: Maybe Text }
-  deriving Show
 
 newtype RoutesException = RoutesException Part
   deriving Show
