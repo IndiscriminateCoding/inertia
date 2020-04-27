@@ -35,6 +35,7 @@ import Proto.Envoy.Config.Filter.Network.HttpConnectionManager.V2.HttpConnection
   ( HttpConnectionManager )
 import Proto.Envoy.Service.Discovery.V2.Ads( AggregatedDiscoveryService )
 import Proto.Google.Protobuf.Any( Any )
+import Proto.Google.Protobuf.Wrappers( UInt32Value )
 
 import qualified Data.Map.Strict as M
 import qualified Data.Text as Text
@@ -176,21 +177,35 @@ renderClusters ds = defMessage
   & field @"typeUrl" .~ clusterUrl
   & field @"resources" .~ map f (M.toList ds)
   where
+    uint32 :: Integral n => n -> UInt32Value
+    uint32 n = defMessage & field @"value" .~ fromIntegral n
+
     f :: (Text, Destination) -> Any
     f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
-      & field @"value" .~ encodeMessage (addLbConfig loadBalancer $ cluster name dst
-        & field @"name" .~ name
-        & field @"connectTimeout" .~ protobufDuration connectTimeout
-        & field @"lbPolicy" .~ lbPolicy loadBalancer
+      & field @"value" .~ encodeMessage (
+        addLbConfig loadBalancer . addCircuitBreaker circuitBreaker $ cluster name dst
+          & field @"name" .~ name
+          & field @"connectTimeout" .~ protobufDuration connectTimeout
+          & field @"lbPolicy" .~ lbPolicy loadBalancer
       )
+
+    addCircuitBreaker :: Maybe CircuitBreaker -> ClusterV2.Cluster -> ClusterV2.Cluster
+    addCircuitBreaker (Just CircuitBreaker{..}) c = c
+      & field @"circuitBreakers" .~ (defMessage
+        & field @"thresholds" .~ [ defMessage
+          & field @"maybe'maxConnections" .~ fmap uint32 maxConnections
+          & field @"maybe'maxPendingRequests" .~ fmap uint32 maxPendingRequests
+          & field @"maybe'maxRequests" .~ fmap uint32 maxRequests
+          & field @"maybe'maxRetries" .~ fmap uint32 maxRetries
+        ]
+      )
+    addCircuitBreaker Nothing c = c
 
     addLbConfig :: LoadBalancer -> ClusterV2.Cluster -> ClusterV2.Cluster
     addLbConfig (LeastRequest n) c = c
       & field @"leastRequestLbConfig" .~ (defMessage
-        & field @"choiceCount" .~ (defMessage
-          & field @"value" .~ fromIntegral n
-        )
+        & field @"choiceCount" .~ uint32 n
       )
     addLbConfig _ c = c
 

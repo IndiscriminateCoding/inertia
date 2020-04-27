@@ -143,18 +143,28 @@ asLoadBalancer = do
 
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
-  _ <- allowedKeys ["discovery", "hosts", "connect-timeout", "load-balancer"]
+  _ <- allowedKeys ["discovery", "hosts", "connect-timeout", "load-balancer", "circuit-breaker"]
   d <- A.key "discovery" asDiscovery
   hs <- A.keyOrDefault "hosts" [] (asOptList asHost)
   ct <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
   lb <- A.keyOrDefault "load-balancer" (LeastRequest 2) asLoadBalancer
-  pure (Destination d hs ct lb)
+  cb <- A.keyMay "circuit-breaker" asCircuitBreaker
+  pure (Destination d hs ct lb cb)
   where
     asHost = do
       _ <- allowedKeys ["host", "port"]
       host <- A.key "host" asText
       port <- A.key "port" asPort
       pure (host, port)
+
+asCircuitBreaker :: Monad m => ParseT Text m CircuitBreaker
+asCircuitBreaker = do
+  _ <- allowedKeys ["max-connections", "max-pending-requests", "max-requests", "max-retries"]
+  mc <- A.keyMay "max-connections" asIntegral
+  mp <- A.keyMay "max-pending-requests" asIntegral
+  mreq <- A.keyMay "max-requests" asIntegral
+  mret <- A.keyMay "max-retries" asIntegral
+  pure (CircuitBreaker mc mp mreq mret)
 
 asDiscovery :: Monad m => ParseT Text m Discovery
 asDiscovery = asText >>= f

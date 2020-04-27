@@ -99,6 +99,11 @@ destinations:
     connect-timeout: 333ms
     load-balancer:
       round-robin: {}
+    circuit-breaker:
+      max-connections: 128
+      max-pending-requests: 64
+      max-requests: 128
+      max-retries: 2
   google:
     discovery: strict-dns
     hosts:

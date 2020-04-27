@@ -14,9 +14,16 @@ data Destination = Destination
   { discovery :: Discovery
   , hosts :: [(Text, Int)]
   , connectTimeout :: Duration
-  , loadBalancer :: LoadBalancer }
+  , loadBalancer :: LoadBalancer
+  , circuitBreaker :: Maybe CircuitBreaker }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
+
+data CircuitBreaker = CircuitBreaker
+  { maxConnections :: Maybe Int
+  , maxPendingRequests :: Maybe Int
+  , maxRequests :: Maybe Int
+  , maxRetries :: Maybe Int }
 
 data Listener r = Listener
   { host :: Text
