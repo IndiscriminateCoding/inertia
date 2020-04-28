@@ -109,7 +109,7 @@ asNonEmptyList p = asOptList p >>= nel
 
 asConfig :: Monad m => ParseT Text m Config
 asConfig = do
-  _ <- allowedKeys ["destinations", "listeners", "ads"]
+  allowedKeys ["destinations", "listeners", "ads"]
   destinations <- keyOrDefault "destinations" M.empty (asMap asDestination)
   listeners <-
     keyOrDefault "listeners" M.empty (asMap . asListener  . asRoutes $ M.keysSet destinations)
@@ -119,7 +119,7 @@ asConfig = do
 asAdsConfig :: Monad m => ParseT Text m AdsConfig
 asAdsConfig = do
   let AdsConfig{..} = defaultAdsConfig
-  _ <- allowedKeys ["host", "port", "certificate", "key"]
+  allowedKeys ["host", "port", "certificate", "key"]
   h <- keyOrDefault "host" host asString
   p <- keyOrDefault "port" port asPort
   c <- keyOrDefault "certificate" certificate asString
@@ -128,7 +128,7 @@ asAdsConfig = do
 
 asLoadBalancer :: Monad m => ParseT Text m LoadBalancer
 asLoadBalancer = do
-  _ <- allowedKeys ["least-request", "random", "round-robin"]
+  allowedKeys ["least-request", "random", "round-robin"]
   lr <- A.keyMay "least-request" asChoiceCount
   rd <- A.keyMay "random" (allowedKeys [])
   rr <- A.keyMay "round-robin" (allowedKeys [])
@@ -143,7 +143,7 @@ asLoadBalancer = do
 
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
-  _ <- allowedKeys ["discovery", "hosts", "connect-timeout", "load-balancer", "circuit-breaker"]
+  allowedKeys ["discovery", "hosts", "connect-timeout", "load-balancer", "circuit-breaker"]
   d <- A.key "discovery" asDiscovery
   hs <- A.keyOrDefault "hosts" [] (asOptList asHost)
   ct <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
@@ -152,14 +152,14 @@ asDestination = do
   pure (Destination d hs ct lb cb)
   where
     asHost = do
-      _ <- allowedKeys ["host", "port"]
+      allowedKeys ["host", "port"]
       host <- A.key "host" asText
       port <- A.key "port" asPort
       pure (host, port)
 
 asCircuitBreaker :: Monad m => ParseT Text m CircuitBreaker
 asCircuitBreaker = do
-  _ <- allowedKeys ["max-connections", "max-pending-requests", "max-requests", "max-retries"]
+  allowedKeys ["max-connections", "max-pending-requests", "max-requests", "max-retries"]
   mc <- A.keyMay "max-connections" asIntegral
   mp <- A.keyMay "max-pending-requests" asIntegral
   mreq <- A.keyMay "max-requests" asIntegral
@@ -191,7 +191,7 @@ asRoutes dsts = fmap f (asOptList asConfigRoute)
       case () of
         _ | Just w <- w -> do
           t <- A.key "then" (asOptList asConfigRoute)
-          _ <- allowedKeys ["when", "then"]
+          allowedKeys ["when", "then"]
           pure (ConfigWhen w t)
         _ | Just d <- d ->
           if elem d dsts
@@ -204,12 +204,12 @@ asListener p = do
   host <- keyOrDefault "host" "0.0.0.0" asText
   port <- A.key "port" asPort
   http <- A.key "http" p
-  _ <- allowedKeys ["host", "port", "http"]
+  allowedKeys ["host", "port", "http"]
   pure (Listener host port http)
 
 asCondition :: Monad m => ParseT Text m Condition
 asCondition = do
-  _ <- allowedKeys ["not", "all", "any", "authority", "method", "path", "header"]
+  allowedKeys ["not", "all", "any", "authority", "method", "path", "header"]
   not <- keyMay "not" asCondition
   all <- keyMay "all" (asNonEmptyList asCondition)
   any <- keyMay "any" (asNonEmptyList asCondition)
@@ -225,7 +225,7 @@ asCondition = do
     _ | Just m <- method -> allowedKeys ["method"] $> Match Method m
     _ | Just p <- path -> allowedKeys ["path"] $> Match Path p
     _ | Just h <- header -> do
-      _ <- allowedKeys ["header"]
+      allowedKeys ["header"]
       n <- A.key "header" . A.key "name" $ asText
       pure (Match (Header n) h)
     _ -> throwCustomError "can't parse condition"
