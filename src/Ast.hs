@@ -16,7 +16,8 @@ data Destination = Destination
   , connectTimeout :: Duration
   , loadBalancer :: LoadBalancer
   , circuitBreaker :: Maybe CircuitBreaker
-  , outlierDetection :: Maybe OutlierDetection }
+  , outlierDetection :: Maybe OutlierDetection
+  , healthyPanicThreshold :: Maybe Int }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 

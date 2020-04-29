@@ -34,6 +34,7 @@ import Proto.Envoy.Api.V2.Listener.ListenerComponents( FilterChain )
 import Proto.Envoy.Config.Filter.Network.HttpConnectionManager.V2.HttpConnectionManager
   ( HttpConnectionManager )
 import Proto.Envoy.Service.Discovery.V2.Ads( AggregatedDiscoveryService )
+import Proto.Envoy.Type.Percent( Percent )
 import Proto.Google.Protobuf.Any( Any )
 import Proto.Google.Protobuf.Wrappers( UInt32Value )
 
@@ -181,6 +182,9 @@ renderClusters ds = defMessage
     uint32 :: Integral n => n -> UInt32Value
     uint32 n = defMessage & field @"value" .~ fromIntegral n
 
+    percent :: Integral n => n -> Percent
+    percent n = defMessage & field @"value" .~ fromIntegral n
+
     f :: (Text, Destination) -> Any
     f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
@@ -192,6 +196,10 @@ renderClusters ds = defMessage
           & field @"name" .~ name
           & field @"connectTimeout" .~ protobufDuration connectTimeout
           & field @"lbPolicy" .~ lbPolicy loadBalancer
+          & field @"maybe'commonLbConfig" .~
+            fmap
+              (\t -> defMessage & field @"healthyPanicThreshold" .~ percent t)
+              healthyPanicThreshold
       )
 
     addOutlierDetection :: Maybe OutlierDetection -> ClusterV2.Cluster -> ClusterV2.Cluster

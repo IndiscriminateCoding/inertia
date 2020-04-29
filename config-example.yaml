@@ -132,6 +132,7 @@ destinations:
           enforcing: 100
         failure-percentage:
           enforcing: 100
+    healthy-panic-threshold: 71
   google:
     discovery: strict-dns
     hosts:

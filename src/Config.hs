@@ -149,13 +149,15 @@ asDestination = do
     , "connect-timeout"
     , "load-balancer"
     , "circuit-breaker"
-    , "outlier-detection" ]
+    , "outlier-detection"
+    , "healthy-panic-threshold" ]
   discovery <- A.key "discovery" asDiscovery
   hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
   connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
   loadBalancer <- A.keyOrDefault "load-balancer" (LeastRequest 2) asLoadBalancer
   circuitBreaker <- A.keyMay "circuit-breaker" asCircuitBreaker
   outlierDetection <- A.keyMay "outlier-detection" asOutlierDetection
+  healthyPanicThreshold <- A.keyMay "healthy-panic-threshold" asPercent
   pure Destination{..}
   where
     asHost = do
