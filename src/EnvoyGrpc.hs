@@ -42,6 +42,7 @@ import qualified Data.Text as Text
 import qualified Proto.Envoy.Api.V2.Core.Address as AddressV2
 import qualified Proto.Envoy.Api.V2.Route.RouteComponents as RouteV2
 import qualified Proto.Envoy.Api.V2.Cluster as ClusterV2
+import qualified Proto.Envoy.Api.V2.Cluster.OutlierDetection as ClusterV2
 import qualified Proto.Envoy.Api.V2.Listener as ListenerV2
 import qualified Proto.Google.Protobuf.Duration as PB
 import qualified System.Log.Logger as L
@@ -184,11 +185,64 @@ renderClusters ds = defMessage
     f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
       & field @"value" .~ encodeMessage (
-        addLbConfig loadBalancer . addCircuitBreaker circuitBreaker $ cluster name dst
+        addLbConfig loadBalancer .
+        addCircuitBreaker circuitBreaker .
+        addOutlierDetection outlierDetection $
+        cluster name dst
           & field @"name" .~ name
           & field @"connectTimeout" .~ protobufDuration connectTimeout
           & field @"lbPolicy" .~ lbPolicy loadBalancer
       )
+
+    addOutlierDetection :: Maybe OutlierDetection -> ClusterV2.Cluster -> ClusterV2.Cluster
+    addOutlierDetection Nothing c = c
+    addOutlierDetection (Just OutlierDetection{..}) c = c
+      & field @"outlierDetection" .~ (
+        addFailurePercentage failurePercentage .
+        addSuccessRate successRate $
+        defMessage
+          & field @"maybe'interval" .~ fmap protobufDuration interval
+          & field @"maybe'baseEjectionTime" .~ fmap protobufDuration baseEjectionTime
+          & field @"maybe'maxEjectionPercent" .~ fmap uint32 maxEjectionPercent
+          & field @"maybe'consecutive5xx" .~
+            fmap (uint32 . num) consecutive5xx
+          & field @"enforcingConsecutive5xx" .~
+            uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutive5xx)
+          & field @"maybe'consecutiveGatewayFailure" .~
+            fmap (uint32 . num) consecutiveGatewayFailure
+          & field @"enforcingConsecutiveGatewayFailure" .~
+            uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutiveGatewayFailure)
+      )
+
+    addSuccessRate :: Maybe SuccessRate -> ClusterV2.OutlierDetection -> ClusterV2.OutlierDetection
+    addSuccessRate Nothing x = x
+      & field @"enforcingSuccessRate" .~ uint32 (0 :: Int)
+    addSuccessRate (Just SuccessRate{..}) x = x
+      & field @"successRateMinimumHosts" .~ uint32 minimumHosts
+      & field @"successRateRequestVolume" .~ uint32 requestVolume
+      & field @"successRateStdevFactor" .~ uint32 stdevFactor
+      & field @"enforcingSuccessRate" .~ uint32 enforcing
+
+    addFailurePercentage
+      :: Maybe FailurePercentage -> ClusterV2.OutlierDetection -> ClusterV2.OutlierDetection
+    addFailurePercentage Nothing x = x
+      & field @"enforcingFailurePercentage" .~ uint32 (0 :: Int)
+    addFailurePercentage (Just FailurePercentage{..}) x = x
+      & field @"failurePercentageMinimumHosts" .~ uint32 minimumHosts
+      & field @"failurePercentageRequestVolume" .~ uint32 requestVolume
+      & field @"failurePercentageThreshold" .~ uint32 threshold
+      & field @"enforcingFailurePercentage" .~ uint32 enforcing
+
+    addLocalOrigin :: Maybe LocalOrigin -> ClusterV2.OutlierDetection -> ClusterV2.OutlierDetection
+    addLocalOrigin Nothing x = x
+    addLocalOrigin (Just LocalOrigin{..}) x = x
+      & field @"splitExternalLocalOriginErrors" .~ True
+      & field @"maybe'consecutiveLocalOriginFailure" .~ fmap (uint32 . num) consecutive
+      & field @"enforcingConsecutiveLocalOriginFailure" .~
+        uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutive)
+      & field @"enforcingLocalOriginSuccessRate" .~ uint32 (fromMaybe 0 enforcingSuccessRate)
+      & field @"enforcingFailurePercentageLocalOrigin"
+        .~ uint32 (fromMaybe 0 enforcingFailurePercentage)
 
     addCircuitBreaker :: Maybe CircuitBreaker -> ClusterV2.Cluster -> ClusterV2.Cluster
     addCircuitBreaker (Just CircuitBreaker{..}) c = c

@@ -104,6 +104,34 @@ destinations:
       max-pending-requests: 64
       max-requests: 128
       max-retries: 2
+    outlier-detection:
+      interval: 500ms
+      base-ejection-time: 30s
+      max-ejection-percent: 10
+      consecutive-5xx:
+        num: 5
+        enforcing: 100
+      consecutive-gateway-failure:
+        num: 5
+        enforcing: 0
+      success-rate:
+        minimum-hosts: 5
+        request-volume: 100
+        stdev-factor: 1900
+        enforcing: 100
+      failure-percentage:
+        minimum-hosts: 5
+        request-volume: 50
+        threshold: 85
+        enforcing: 0
+      local-origin:
+        consecutive:
+          num: 5
+          enforcing: 100
+        success-rate:
+          enforcing: 100
+        failure-percentage:
+          enforcing: 100
   google:
     discovery: strict-dns
     hosts:

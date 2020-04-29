@@ -15,7 +15,8 @@ data Destination = Destination
   , hosts :: [(Text, Int)]
   , connectTimeout :: Duration
   , loadBalancer :: LoadBalancer
-  , circuitBreaker :: Maybe CircuitBreaker }
+  , circuitBreaker :: Maybe CircuitBreaker
+  , outlierDetection :: Maybe OutlierDetection }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 
@@ -24,6 +25,37 @@ data CircuitBreaker = CircuitBreaker
   , maxPendingRequests :: Maybe Int
   , maxRequests :: Maybe Int
   , maxRetries :: Maybe Int }
+
+data OutlierDetection = OutlierDetection
+  { interval :: Maybe Duration
+  , baseEjectionTime :: Maybe Duration
+  , maxEjectionPercent :: Maybe Int
+  , consecutive5xx :: Maybe Consecutive
+  , consecutiveGatewayFailure :: Maybe Consecutive
+  , successRate :: Maybe SuccessRate
+  , failurePercentage :: Maybe FailurePercentage
+  , localOrigin :: Maybe LocalOrigin }
+
+data Consecutive = Consecutive
+  { enforcing :: Int
+  , num :: Int }
+
+data SuccessRate = SuccessRate
+  { minimumHosts :: Int
+  , requestVolume :: Int
+  , stdevFactor :: Int
+  , enforcing :: Int }
+
+data FailurePercentage = FailurePercentage
+  { minimumHosts :: Int
+  , requestVolume :: Int
+  , threshold :: Int
+  , enforcing :: Int }
+
+data LocalOrigin = LocalOrigin
+  { consecutive :: Maybe Consecutive
+  , enforcingSuccessRate :: Maybe Int
+  , enforcingFailurePercentage :: Maybe Int }
 
 data Listener r = Listener
   { host :: Text

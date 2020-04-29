@@ -143,19 +143,81 @@ asLoadBalancer = do
 
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
-  allowedKeys ["discovery", "hosts", "connect-timeout", "load-balancer", "circuit-breaker"]
-  d <- A.key "discovery" asDiscovery
-  hs <- A.keyOrDefault "hosts" [] (asOptList asHost)
-  ct <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
-  lb <- A.keyOrDefault "load-balancer" (LeastRequest 2) asLoadBalancer
-  cb <- A.keyMay "circuit-breaker" asCircuitBreaker
-  pure (Destination d hs ct lb cb)
+  allowedKeys
+    [ "discovery"
+    , "hosts"
+    , "connect-timeout"
+    , "load-balancer"
+    , "circuit-breaker"
+    , "outlier-detection" ]
+  discovery <- A.key "discovery" asDiscovery
+  hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
+  connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
+  loadBalancer <- A.keyOrDefault "load-balancer" (LeastRequest 2) asLoadBalancer
+  circuitBreaker <- A.keyMay "circuit-breaker" asCircuitBreaker
+  outlierDetection <- A.keyMay "outlier-detection" asOutlierDetection
+  pure Destination{..}
   where
     asHost = do
       allowedKeys ["host", "port"]
       host <- A.key "host" asText
       port <- A.key "port" asPort
       pure (host, port)
+
+asOutlierDetection :: Monad m => ParseT Text m OutlierDetection
+asOutlierDetection = do
+  allowedKeys
+    [ "interval"
+    , "base-ejection-time"
+    , "max-ejection-percent"
+    , "consecutive-5xx"
+    , "consecutive-gateway-failure"
+    , "success-rate"
+    , "failure-percentage"
+    , "local-origin" ]
+  interval <- A.keyMay "interval" asDuration
+  baseEjectionTime <- A.keyMay "base-ejection-time" asDuration
+  maxEjectionPercent <- A.keyMay "max-ejection-percent" asPercent
+  consecutive5xx <- A.keyMay "consecutive-5xx" asConsecutive
+  consecutiveGatewayFailure <- A.keyMay "consecutive-gateway-failure" asConsecutive
+  successRate <- A.keyMay "success-rate" asSuccessRate
+  failurePercentage <- A.keyMay "failure-percentage" asFailurePercentage
+  localOrigin <- A.keyMay "local-origin" asLocalOrigin
+  pure OutlierDetection{..}
+
+asConsecutive :: Monad m => ParseT Text m Consecutive
+asConsecutive = do
+  allowedKeys ["enforcing", "num"]
+  enforcing <- A.key "enforcing" asPercent
+  num <- A.key "num" asIntegral
+  pure Consecutive{..}
+
+asSuccessRate :: Monad m => ParseT Text m SuccessRate
+asSuccessRate = do
+  allowedKeys ["minimum-hosts", "request-volume", "stdev-factor", "enforcing"]
+  minimumHosts <- A.key "minimum-hosts" asIntegral
+  requestVolume <- A.key "request-volume" asIntegral
+  stdevFactor <- A.key "stdev-factor" asIntegral
+  enforcing <- A.key "enforcing" asPercent
+  pure SuccessRate{..}
+
+asFailurePercentage :: Monad m => ParseT Text m FailurePercentage
+asFailurePercentage = do
+  allowedKeys ["minimum-hosts", "request-volume", "threshold", "enforcing"]
+  minimumHosts <- A.key "minimum-hosts" asIntegral
+  requestVolume <- A.key "request-volume" asIntegral
+  threshold <- A.key "threshold" asPercent
+  enforcing <- A.key "enforcing" asPercent
+  pure FailurePercentage{..}
+
+asLocalOrigin :: Monad m => ParseT Text m LocalOrigin
+asLocalOrigin = do
+  allowedKeys ["consecutive", "success-rate", "failure-percentage"]
+  consecutive <- A.keyMay "consecutive" asConsecutive
+  let asEnforcing = allowedKeys ["enforcing"] >> A.key "enforcing" asPercent
+  enforcingSuccessRate <- A.keyMay "success-rate" asEnforcing
+  enforcingFailurePercentage <- A.keyMay "failure-percentage" asEnforcing
+  pure LocalOrigin{..}
 
 asCircuitBreaker :: Monad m => ParseT Text m CircuitBreaker
 asCircuitBreaker = do
