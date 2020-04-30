@@ -27,27 +27,27 @@ import Network.Wai.Handler.Warp
   , setPort
   , setTimeout )
 import Network.Wai.Handler.WarpTLS( TLSSettings, tlsSettings )
-import Proto.Envoy.Api.V2.Discovery( DiscoveryRequest, DiscoveryResponse )
-import Proto.Envoy.Api.V2.Core.Address( Address )
-import Proto.Envoy.Api.V2.Core.Base( TransportSocket )
-import Proto.Envoy.Api.V2.Endpoint( ClusterLoadAssignment )
-import Proto.Envoy.Api.V2.Listener.ListenerComponents( FilterChain )
-import Proto.Envoy.Config.Filter.Network.HttpConnectionManager.V2.HttpConnectionManager
-  ( HttpConnectionManager )
-import Proto.Envoy.Service.Discovery.V2.Ads( AggregatedDiscoveryService )
-import Proto.Envoy.Type.Percent( Percent )
-import Proto.Google.Protobuf.Any( Any )
-import Proto.Google.Protobuf.Wrappers( UInt32Value )
 
 import qualified Data.Map.Strict as M
 import qualified Data.Text as Text
-import qualified Proto.Envoy.Api.V2.Auth.Cert as CertV2
-import qualified Proto.Envoy.Api.V2.Core.Address as AddressV2
-import qualified Proto.Envoy.Api.V2.Route.RouteComponents as RouteV2
-import qualified Proto.Envoy.Api.V2.Cluster as ClusterV2
-import qualified Proto.Envoy.Api.V2.Cluster.OutlierDetection as ClusterV2
-import qualified Proto.Envoy.Api.V2.Listener as ListenerV2
-import qualified Proto.Google.Protobuf.Duration as PB
+import qualified Proto.Envoy.Config.Cluster.V3.OutlierDetection as Envoy
+import qualified Proto.Envoy.Config.Cluster.V3.Cluster as Envoy
+import qualified Proto.Envoy.Config.Core.V3.Address as Envoy
+import qualified Proto.Envoy.Config.Core.V3.Base as Envoy
+import qualified Proto.Envoy.Config.Endpoint.V3.Endpoint as Envoy
+import qualified Proto.Envoy.Config.Listener.V3.Listener as Envoy
+import qualified Proto.Envoy.Config.Listener.V3.ListenerComponents as Envoy
+import qualified Proto.Envoy.Config.Route.V3.Route as Envoy
+import qualified Proto.Envoy.Config.Route.V3.RouteComponents as Envoy
+import qualified
+  Proto.Envoy.Extensions.Filters.Network.HttpConnectionManager.V3.HttpConnectionManager as Envoy
+import qualified Proto.Envoy.Extensions.TransportSockets.Tls.V3.Cert as Envoy
+import qualified Proto.Envoy.Service.Discovery.V3.Ads as Envoy
+import qualified Proto.Envoy.Service.Discovery.V3.Discovery as Envoy
+import qualified Proto.Envoy.Type.V3.Percent as Envoy
+import qualified Proto.Google.Protobuf.Any as Google
+import qualified Proto.Google.Protobuf.Duration as Google
+import qualified Proto.Google.Protobuf.Wrappers as Google
 import qualified System.Log.Logger as L
 
 import Ast
@@ -64,19 +64,23 @@ runServer AdsConfig{..} lsts dsts =
   where
     ts = tlsSettings certificate key
     ss = setLogger l . setTimeout 300 . setHost (fromString host) . setPort port $ defaultSettings
-    l r _ _ = L.debugM "EnvoyGrpc" ("ADS client disconnected: " ++ show (remoteHost r))
+    l r s _ = L.debugM "EnvoyGrpc" $ concat
+      [ "gRPC request terminated ("
+      , show s
+      , "): "
+      , show (remoteHost r) ]
 
-data AdsState = Wait | Term | Pass DiscoveryRequest
+data AdsState = Wait | Term | Pass Envoy.DiscoveryRequest
 
-ads :: DiscoveryResponse -> DiscoveryResponse -> ServiceHandler
+ads :: Envoy.DiscoveryResponse -> Envoy.DiscoveryResponse -> ServiceHandler
 ads dsts lsts = bidiStream
-  (RPC :: RPC AggregatedDiscoveryService "streamAggregatedResources")
+  (RPC :: RPC Envoy.AggregatedDiscoveryService "streamAggregatedResources")
   (adsHandler dsts lsts)
 
 adsHandler
-  :: DiscoveryResponse
-  -> DiscoveryResponse
-  -> BiDiStreamHandler IO DiscoveryRequest DiscoveryResponse AdsState
+  :: Envoy.DiscoveryResponse
+  -> Envoy.DiscoveryResponse
+  -> BiDiStreamHandler IO Envoy.DiscoveryRequest Envoy.DiscoveryResponse AdsState
 adsHandler dsts lsts req = do
   _ <- L.debugM "EnvoyGrpc" ("New ADS client: " ++ show (remoteHost req))
   ref <- newIORef (False, False)
@@ -85,7 +89,7 @@ adsHandler dsts lsts req = do
     s
       :: IORef (Bool, Bool)
       -> AdsState
-      -> IO (BiDiStep IO DiscoveryRequest DiscoveryResponse AdsState)
+      -> IO (BiDiStep IO Envoy.DiscoveryRequest Envoy.DiscoveryResponse AdsState)
     s _ Wait = pure (WaitInput (const $ pure . Pass) (const . pure $ Term))
     s _ Term = L.debugM "EnvoyGrpc" ("Client EOF: " ++ show (remoteHost req)) $> Abort
     s r (Pass dr) = do
@@ -111,17 +115,18 @@ httpConnectionManagerUrl = Text.concat
   , "envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager" ]
 
 upstreamTlsContextUrl :: Text
-upstreamTlsContextUrl = "type.googleapis.com/envoy.api.v2.auth.tls.UpstreamTlsContext"
+upstreamTlsContextUrl =
+  "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext"
 
-renderListeners :: Map Text (Listener [Rule]) -> DiscoveryResponse
+renderListeners :: Map Text (Listener [Rule]) -> Envoy.DiscoveryResponse
 renderListeners ls = defMessage
   & field @"typeUrl" .~ listenerUrl
   & field @"resources" .~ M.foldrWithKey (\k v a -> f k v : a) [] ls
   where
-    f :: Text -> Listener [Rule] -> Any
+    f :: Text -> Listener [Rule] -> Google.Any
     f name Listener{..} = defMessage
       & field @"typeUrl" .~ listenerUrl
-      & field @"value" .~ encodeMessage ((defMessage :: ListenerV2.Listener)
+      & field @"value" .~ encodeMessage ((defMessage :: Envoy.Listener)
         & field @"name" .~ name
         & field @"address" .~ (defMessage
           & field @"socketAddress" .~ (defMessage
@@ -132,15 +137,15 @@ renderListeners ls = defMessage
         & field @"filterChains" .~ [envoyRoutes http]
       )
 
-envoyRoutes :: [Rule] -> FilterChain
+envoyRoutes :: [Rule] -> Envoy.FilterChain
 envoyRoutes routes = defMessage
   & field @"filters" .~ [ defMessage
     & field @"name" .~ "envoy.http_connection_manager"
     & field @"typedConfig" .~ (defMessage
       & field @"typeUrl" .~ httpConnectionManagerUrl
-      & field @"value" .~ encodeMessage ((defMessage :: HttpConnectionManager)
+      & field @"value" .~ encodeMessage ((defMessage :: Envoy.HttpConnectionManager)
         & field @"statPrefix" .~ "http_connection_manager" -- TODO
-        & field @"httpFilters" .~ [ defMessage & field @"name" .~ "envoy.router" ]
+        & field @"httpFilters" .~ [ defMessage & field @"name" .~ "envoy.filters.http.router" ]
         & field @"routeConfig" .~ (defMessage
           & field @"virtualHosts" .~ [defMessage
             & field @"name" .~ "virtual_host" -- TODO
@@ -152,7 +157,7 @@ envoyRoutes routes = defMessage
     )
   ]
 
-envoyRoute :: Rule -> RouteV2.Route
+envoyRoute :: Rule -> Envoy.Route
 envoyRoute Rule{..} = defMessage
   & field @"match" .~ (addPathMatcher defMessage (fromMaybe (Prefix "/") path)
     & field @"headers" .~
@@ -166,11 +171,11 @@ envoyRoute Rule{..} = defMessage
       (\t -> field @"route" .~ (defMessage & field @"cluster" .~ t))
       action
   where
-    addPathMatcher :: RouteV2.RouteMatch -> Matcher -> RouteV2.RouteMatch
+    addPathMatcher :: Envoy.RouteMatch -> Matcher -> Envoy.RouteMatch
     addPathMatcher msg (Exact t) = msg & field @"path" .~ t
     addPathMatcher msg (Prefix t) = msg & field @"prefix" .~ t
 
-    addHeaderMatcher :: Matcher -> RouteV2.HeaderMatcher -> RouteV2.HeaderMatcher
+    addHeaderMatcher :: Matcher -> Envoy.HeaderMatcher -> Envoy.HeaderMatcher
     addHeaderMatcher (Exact t) msg = msg & field @"exactMatch" .~ t
     addHeaderMatcher (Prefix t) msg = msg & field @"prefixMatch" .~ t
 
@@ -179,18 +184,18 @@ envoyRoute Rule{..} = defMessage
       fmap (":method",) (maybeToList method) ++
       headers
 
-renderClusters :: Map Text Destination -> DiscoveryResponse
+renderClusters :: Map Text Destination -> Envoy.DiscoveryResponse
 renderClusters ds = defMessage
   & field @"typeUrl" .~ clusterUrl
   & field @"resources" .~ map f (M.toList ds)
   where
-    uint32 :: Integral n => n -> UInt32Value
+    uint32 :: Integral n => n -> Google.UInt32Value
     uint32 n = defMessage & field @"value" .~ fromIntegral n
 
-    percent :: Integral n => n -> Percent
+    percent :: Integral n => n -> Envoy.Percent
     percent n = defMessage & field @"value" .~ fromIntegral n
 
-    f :: (Text, Destination) -> Any
+    f :: (Text, Destination) -> Google.Any
     f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
       & field @"value" .~ encodeMessage (
@@ -212,22 +217,23 @@ renderClusters ds = defMessage
             else Nothing
       )
 
-    transportSocket :: Tls -> TransportSocket
+    transportSocket :: Tls -> Envoy.TransportSocket
     transportSocket Tls{..} = defMessage
       & field @"name" .~ "envoy.transport_sockets.tls"
       & field @"typedConfig" .~ (defMessage
         & field @"typeUrl" .~ upstreamTlsContextUrl
         & field @"value" .~ encodeMessage (maybe
-          (defMessage :: CertV2.UpstreamTlsContext)
+          (defMessage :: Envoy.UpstreamTlsContext)
           (\s -> defMessage & field @"sni" .~ s)
           sni
         )
       )
 
-    addOutlierDetection :: Maybe OutlierDetection -> ClusterV2.Cluster -> ClusterV2.Cluster
+    addOutlierDetection :: Maybe OutlierDetection -> Envoy.Cluster -> Envoy.Cluster
     addOutlierDetection Nothing c = c
     addOutlierDetection (Just OutlierDetection{..}) c = c
       & field @"outlierDetection" .~ (
+        addLocalOrigin localOrigin .
         addFailurePercentage failurePercentage .
         addSuccessRate successRate $
         defMessage
@@ -244,7 +250,7 @@ renderClusters ds = defMessage
             uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutiveGatewayFailure)
       )
 
-    addSuccessRate :: Maybe SuccessRate -> ClusterV2.OutlierDetection -> ClusterV2.OutlierDetection
+    addSuccessRate :: Maybe SuccessRate -> Envoy.OutlierDetection -> Envoy.OutlierDetection
     addSuccessRate Nothing x = x
       & field @"enforcingSuccessRate" .~ uint32 (0 :: Int)
     addSuccessRate (Just SuccessRate{..}) x = x
@@ -254,7 +260,7 @@ renderClusters ds = defMessage
       & field @"enforcingSuccessRate" .~ uint32 enforcing
 
     addFailurePercentage
-      :: Maybe FailurePercentage -> ClusterV2.OutlierDetection -> ClusterV2.OutlierDetection
+      :: Maybe FailurePercentage -> Envoy.OutlierDetection -> Envoy.OutlierDetection
     addFailurePercentage Nothing x = x
       & field @"enforcingFailurePercentage" .~ uint32 (0 :: Int)
     addFailurePercentage (Just FailurePercentage{..}) x = x
@@ -263,7 +269,7 @@ renderClusters ds = defMessage
       & field @"failurePercentageThreshold" .~ uint32 threshold
       & field @"enforcingFailurePercentage" .~ uint32 enforcing
 
-    addLocalOrigin :: Maybe LocalOrigin -> ClusterV2.OutlierDetection -> ClusterV2.OutlierDetection
+    addLocalOrigin :: Maybe LocalOrigin -> Envoy.OutlierDetection -> Envoy.OutlierDetection
     addLocalOrigin Nothing x = x
     addLocalOrigin (Just LocalOrigin{..}) x = x
       & field @"splitExternalLocalOriginErrors" .~ True
@@ -274,7 +280,7 @@ renderClusters ds = defMessage
       & field @"enforcingFailurePercentageLocalOrigin"
         .~ uint32 (fromMaybe 0 enforcingFailurePercentage)
 
-    addCircuitBreaker :: Maybe CircuitBreaker -> ClusterV2.Cluster -> ClusterV2.Cluster
+    addCircuitBreaker :: Maybe CircuitBreaker -> Envoy.Cluster -> Envoy.Cluster
     addCircuitBreaker (Just CircuitBreaker{..}) c = c
       & field @"circuitBreakers" .~ (defMessage
         & field @"thresholds" .~ [ defMessage
@@ -286,23 +292,23 @@ renderClusters ds = defMessage
       )
     addCircuitBreaker Nothing c = c
 
-    addLbConfig :: LoadBalancer -> ClusterV2.Cluster -> ClusterV2.Cluster
+    addLbConfig :: LoadBalancer -> Envoy.Cluster -> Envoy.Cluster
     addLbConfig (LeastRequest n) c = c
       & field @"leastRequestLbConfig" .~ (defMessage
         & field @"choiceCount" .~ uint32 n
       )
     addLbConfig _ c = c
 
-    lbPolicy (LeastRequest _) = ClusterV2.Cluster'LEAST_REQUEST
-    lbPolicy Random = ClusterV2.Cluster'RANDOM
-    lbPolicy RoundRobin = ClusterV2.Cluster'ROUND_ROBIN
+    lbPolicy (LeastRequest _) = Envoy.Cluster'LEAST_REQUEST
+    lbPolicy Random = Envoy.Cluster'RANDOM
+    lbPolicy RoundRobin = Envoy.Cluster'ROUND_ROBIN
 
-    loadAssignment name hs = (defMessage :: ClusterLoadAssignment)
+    loadAssignment name hs = (defMessage :: Envoy.ClusterLoadAssignment)
       & field @"clusterName" .~ name
       & field @"endpoints" .~ [defMessage
         & field @"lbEndpoints" .~ map (\(host, port) -> defMessage
           & field @"endpoint" .~ (defMessage
-            & field @"address" .~ ((defMessage :: AddressV2.Address)
+            & field @"address" .~ ((defMessage :: Envoy.Address)
               & field @"socketAddress" .~ (defMessage
                 & field @"address" .~ host
                 & field @"portValue" .~ fromIntegral (port :: Int)
@@ -312,16 +318,16 @@ renderClusters ds = defMessage
         ) hs
       ]
 
-    clusterType :: Discovery -> ClusterV2.Cluster
-    clusterType Static = defMessage & field @"type'" .~ ClusterV2.Cluster'STATIC
-    clusterType StrictDns = defMessage & field @"type'" .~ ClusterV2.Cluster'STRICT_DNS
-    clusterType LogicalDns = defMessage & field @"type'" .~ ClusterV2.Cluster'LOGICAL_DNS
+    clusterType :: Discovery -> Envoy.Cluster
+    clusterType Static = defMessage & field @"type'" .~ Envoy.Cluster'STATIC
+    clusterType StrictDns = defMessage & field @"type'" .~ Envoy.Cluster'STRICT_DNS
+    clusterType LogicalDns = defMessage & field @"type'" .~ Envoy.Cluster'LOGICAL_DNS
 
-    cluster :: Text -> Destination -> ClusterV2.Cluster
+    cluster :: Text -> Destination -> Envoy.Cluster
     cluster name Destination{..} =
       clusterType discovery & field @"loadAssignment" .~ loadAssignment name hosts
 
-protobufDuration :: Duration -> PB.Duration
+protobufDuration :: Duration -> Google.Duration
 protobufDuration (Duration ms) = defMessage
   & field @"seconds" .~ fromInteger seconds
   & field @"nanos" .~ fromInteger nanos
