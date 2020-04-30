@@ -150,7 +150,8 @@ asDestination = do
     , "load-balancer"
     , "circuit-breaker"
     , "outlier-detection"
-    , "healthy-panic-threshold" ]
+    , "healthy-panic-threshold"
+    , "tls" ]
   discovery <- A.key "discovery" asDiscovery
   hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
   connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
@@ -158,6 +159,7 @@ asDestination = do
   circuitBreaker <- A.keyMay "circuit-breaker" asCircuitBreaker
   outlierDetection <- A.keyMay "outlier-detection" asOutlierDetection
   healthyPanicThreshold <- A.keyMay "healthy-panic-threshold" asPercent
+  tls <- A.keyMay "tls" (allowedKeys ["sni"] >> fmap Tls (A.keyMay "sni" asText))
   pure Destination{..}
   where
     asHost = do

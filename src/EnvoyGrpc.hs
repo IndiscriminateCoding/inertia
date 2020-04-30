@@ -3,7 +3,7 @@ module EnvoyGrpc ( runServer ) where
 import Data.IORef
 import Data.Functor( ($>) )
 import Data.Map.Strict( Map )
-import Data.Maybe( fromMaybe, maybeToList )
+import Data.Maybe( fromMaybe, isNothing, maybeToList )
 import Data.ProtoLens.Encoding( encodeMessage )
 import Data.ProtoLens.Field( field )
 import Data.ProtoLens.Message( defMessage )
@@ -29,6 +29,7 @@ import Network.Wai.Handler.Warp
 import Network.Wai.Handler.WarpTLS( TLSSettings, tlsSettings )
 import Proto.Envoy.Api.V2.Discovery( DiscoveryRequest, DiscoveryResponse )
 import Proto.Envoy.Api.V2.Core.Address( Address )
+import Proto.Envoy.Api.V2.Core.Base( TransportSocket )
 import Proto.Envoy.Api.V2.Endpoint( ClusterLoadAssignment )
 import Proto.Envoy.Api.V2.Listener.ListenerComponents( FilterChain )
 import Proto.Envoy.Config.Filter.Network.HttpConnectionManager.V2.HttpConnectionManager
@@ -40,6 +41,7 @@ import Proto.Google.Protobuf.Wrappers( UInt32Value )
 
 import qualified Data.Map.Strict as M
 import qualified Data.Text as Text
+import qualified Proto.Envoy.Api.V2.Auth.Cert as CertV2
 import qualified Proto.Envoy.Api.V2.Core.Address as AddressV2
 import qualified Proto.Envoy.Api.V2.Route.RouteComponents as RouteV2
 import qualified Proto.Envoy.Api.V2.Cluster as ClusterV2
@@ -107,6 +109,9 @@ httpConnectionManagerUrl :: Text
 httpConnectionManagerUrl = Text.concat
   [ "type.googleapis.com/"
   , "envoy.config.filter.network.http_connection_manager.v2.HttpConnectionManager" ]
+
+upstreamTlsContextUrl :: Text
+upstreamTlsContextUrl = "type.googleapis.com/envoy.api.v2.auth.tls.UpstreamTlsContext"
 
 renderListeners :: Map Text (Listener [Rule]) -> DiscoveryResponse
 renderListeners ls = defMessage
@@ -200,6 +205,23 @@ renderClusters ds = defMessage
             fmap
               (\t -> defMessage & field @"healthyPanicThreshold" .~ percent t)
               healthyPanicThreshold
+          & field @"maybe'transportSocket" .~ fmap transportSocket tls
+          & field @"maybe'upstreamHttpProtocolOptions" .~
+            if any (isNothing . sni) tls
+            then Just (defMessage & field @"autoSni" .~ True)
+            else Nothing
+      )
+
+    transportSocket :: Tls -> TransportSocket
+    transportSocket Tls{..} = defMessage
+      & field @"name" .~ "envoy.transport_sockets.tls"
+      & field @"typedConfig" .~ (defMessage
+        & field @"typeUrl" .~ upstreamTlsContextUrl
+        & field @"value" .~ encodeMessage (maybe
+          (defMessage :: CertV2.UpstreamTlsContext)
+          (\s -> defMessage & field @"sni" .~ s)
+          sni
+        )
       )
 
     addOutlierDetection :: Maybe OutlierDetection -> ClusterV2.Cluster -> ClusterV2.Cluster

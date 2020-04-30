@@ -17,7 +17,8 @@ data Destination = Destination
   , loadBalancer :: LoadBalancer
   , circuitBreaker :: Maybe CircuitBreaker
   , outlierDetection :: Maybe OutlierDetection
-  , healthyPanicThreshold :: Maybe Int }
+  , healthyPanicThreshold :: Maybe Int
+  , tls :: Maybe Tls }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 
@@ -57,6 +58,8 @@ data LocalOrigin = LocalOrigin
   { consecutive :: Maybe Consecutive
   , enforcingSuccessRate :: Maybe Int
   , enforcingFailurePercentage :: Maybe Int }
+
+data Tls = Tls { sni :: Maybe Text }
 
 data Listener r = Listener
   { host :: Text
