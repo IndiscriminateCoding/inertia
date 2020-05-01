@@ -134,6 +134,10 @@ destinations:
           enforcing: 100
     healthy-panic-threshold: 71
     tls: {}
+    tcp-keepalive:
+      probes: 3
+      time: 60s
+      interval: 10s
   google:
     discovery: strict-dns
     hosts:

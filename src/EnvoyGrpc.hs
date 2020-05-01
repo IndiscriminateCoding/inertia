@@ -211,10 +211,19 @@ renderClusters ds = defMessage
               (\t -> defMessage & field @"healthyPanicThreshold" .~ percent t)
               healthyPanicThreshold
           & field @"maybe'transportSocket" .~ fmap transportSocket tls
-          & field @"maybe'upstreamHttpProtocolOptions" .~
+          & field @"maybe'upstreamHttpProtocolOptions" .~ (
             if any (isNothing . sni) tls
             then Just (defMessage & field @"autoSni" .~ True)
             else Nothing
+          )
+          & field @"maybe'upstreamConnectionOptions" .~
+            fmap
+              (\TcpKeepalive{..} -> defMessage & field @"tcpKeepalive" .~ (defMessage
+                & field @"keepaliveProbes" .~ uint32 probes
+                & field @"keepaliveTime" .~ uint32 (toSeconds time)
+                & field @"keepaliveInterval" .~ uint32 (toSeconds interval)
+              ))
+              tcpKeepalive
       )
 
     transportSocket :: Tls -> Envoy.TransportSocket

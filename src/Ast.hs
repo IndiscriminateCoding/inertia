@@ -18,7 +18,8 @@ data Destination = Destination
   , circuitBreaker :: Maybe CircuitBreaker
   , outlierDetection :: Maybe OutlierDetection
   , healthyPanicThreshold :: Maybe Int
-  , tls :: Maybe Tls }
+  , tls :: Maybe Tls
+  , tcpKeepalive :: Maybe TcpKeepalive }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 
@@ -60,6 +61,11 @@ data LocalOrigin = LocalOrigin
   , enforcingFailurePercentage :: Maybe Int }
 
 data Tls = Tls { sni :: Maybe Text }
+
+data TcpKeepalive = TcpKeepalive
+  { probes :: Int
+  , time :: Duration
+  , interval :: Duration }
 
 data Listener r = Listener
   { host :: Text

@@ -151,7 +151,8 @@ asDestination = do
     , "circuit-breaker"
     , "outlier-detection"
     , "healthy-panic-threshold"
-    , "tls" ]
+    , "tls"
+    , "tcp-keepalive" ]
   discovery <- A.key "discovery" asDiscovery
   hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
   connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
@@ -160,6 +161,7 @@ asDestination = do
   outlierDetection <- A.keyMay "outlier-detection" asOutlierDetection
   healthyPanicThreshold <- A.keyMay "healthy-panic-threshold" asPercent
   tls <- A.keyMay "tls" (allowedKeys ["sni"] >> fmap Tls (A.keyMay "sni" asText))
+  tcpKeepalive <- A.keyMay "tcp-keepalive" asTcpKeepalive
   pure Destination{..}
   where
     asHost = do
@@ -167,6 +169,14 @@ asDestination = do
       host <- A.key "host" asText
       port <- A.key "port" asPort
       pure (host, port)
+
+asTcpKeepalive :: Monad m => ParseT Text m TcpKeepalive
+asTcpKeepalive = do
+  allowedKeys ["probes", "time", "interval"]
+  probes <- A.key "probes" asIntegral
+  time <- A.key "time" asDuration
+  interval <- A.key "interval" asDuration
+  pure TcpKeepalive{..}
 
 asOutlierDetection :: Monad m => ParseT Text m OutlierDetection
 asOutlierDetection = do
