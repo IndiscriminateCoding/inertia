@@ -65,18 +65,18 @@ ads:
 #   server-name: envoy
 #   upgrades: [ websocket ]
 #   socket-options:
-#   - level: 1
-#     name: 9
-#     value: 1
-#     state: listening
-#   - level: 6
-#     name: 4
-#     value: 60
-#     state: listening
-#   - level: 6
-#     name: 5
-#     value: 60
-#     state: listening
+#     prebind: []
+#     bound: []
+#     listening:
+#     - level: 1
+#       name: 9
+#       value: 1
+#     - level: 6
+#       name: 4
+#       value: 60
+#     - level: 6
+#       name: 5
+#       value: 60
 
 #   # route
 #   request-timeout: 3
