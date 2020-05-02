@@ -138,6 +138,9 @@ destinations:
       probes: 3
       time: 60s
       interval: 10s
+    http-options:
+      idle-timeout: 123s
+      http-version: downstream # h1, h2
   google:
     discovery: strict-dns
     hosts:

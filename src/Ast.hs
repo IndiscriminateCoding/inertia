@@ -19,7 +19,8 @@ data Destination = Destination
   , outlierDetection :: Maybe OutlierDetection
   , healthyPanicThreshold :: Maybe Int
   , tls :: Maybe Tls
-  , tcpKeepalive :: Maybe TcpKeepalive }
+  , tcpKeepalive :: Maybe TcpKeepalive
+  , httpOptions :: HttpOptions }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 
@@ -66,6 +67,12 @@ data TcpKeepalive = TcpKeepalive
   { probes :: Int
   , time :: Duration
   , interval :: Duration }
+
+data HttpOptions = HttpOptions
+  { idleTimeout :: Duration
+  , httpVersion :: HttpVersion }
+
+data HttpVersion = H1 | H2 | Downstream
 
 data Listener r = Listener
   { host :: Text

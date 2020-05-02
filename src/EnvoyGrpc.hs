@@ -199,6 +199,7 @@ renderClusters ds = defMessage
     f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
       & field @"value" .~ encodeMessage (
+        addHttpVersion (httpVersion httpOptions) .
         addLbConfig loadBalancer .
         addCircuitBreaker circuitBreaker .
         addOutlierDetection outlierDetection $
@@ -224,6 +225,9 @@ renderClusters ds = defMessage
                 & field @"keepaliveInterval" .~ uint32 (toSeconds interval)
               ))
               tcpKeepalive
+          & field @"commonHttpProtocolOptions" .~ (defMessage
+            & field @"idleTimeout" .~ protobufDuration (idleTimeout httpOptions)
+          )
       )
 
     transportSocket :: Tls -> Envoy.TransportSocket
@@ -237,6 +241,13 @@ renderClusters ds = defMessage
           sni
         )
       )
+
+    addHttpVersion :: HttpVersion -> Envoy.Cluster -> Envoy.Cluster
+    addHttpVersion H1 c = c
+    addHttpVersion H2 c = c
+      & field @"http2ProtocolOptions" .~ defMessage
+    addHttpVersion Downstream c = c
+      & field @"protocolSelection" .~ Envoy.Cluster'USE_DOWNSTREAM_PROTOCOL
 
     addOutlierDetection :: Maybe OutlierDetection -> Envoy.Cluster -> Envoy.Cluster
     addOutlierDetection Nothing c = c

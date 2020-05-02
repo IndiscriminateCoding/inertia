@@ -141,6 +141,8 @@ asLoadBalancer = do
     asChoiceCount :: Monad m => ParseT Text m Int
     asChoiceCount = allowedKeys ["choice-count"] *> A.keyOrDefault "choice-count" 2 asIntegral
 
+defaultHttpOptions = HttpOptions (seconds 600) H1
+
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
   allowedKeys
@@ -152,7 +154,8 @@ asDestination = do
     , "outlier-detection"
     , "healthy-panic-threshold"
     , "tls"
-    , "tcp-keepalive" ]
+    , "tcp-keepalive"
+    , "http-options" ]
   discovery <- A.key "discovery" asDiscovery
   hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
   connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
@@ -162,6 +165,7 @@ asDestination = do
   healthyPanicThreshold <- A.keyMay "healthy-panic-threshold" asPercent
   tls <- A.keyMay "tls" (allowedKeys ["sni"] >> fmap Tls (A.keyMay "sni" asText))
   tcpKeepalive <- A.keyMay "tcp-keepalive" asTcpKeepalive
+  httpOptions <- A.keyOrDefault "http-options" defaultHttpOptions asHttpOptions
   pure Destination{..}
   where
     asHost = do
@@ -169,6 +173,18 @@ asDestination = do
       host <- A.key "host" asText
       port <- A.key "port" asPort
       pure (host, port)
+
+asHttpOptions :: Monad m => ParseT Text m HttpOptions
+asHttpOptions = do
+  allowedKeys ["idle-timeout", "http-version"]
+  idleTimeout <- A.keyOrDefault "idle-timeout" (idleTimeout defaultHttpOptions) asDuration
+  httpVersion <- A.keyOrDefault "http-version" (httpVersion defaultHttpOptions) (asText >>= f)
+  pure HttpOptions{..}
+  where
+    f "h1" = pure H1
+    f "h2" = pure H2
+    f "downstream" = pure Downstream
+    f s = throwCustomError ("can't parse protocol version: " <> s)
 
 asTcpKeepalive :: Monad m => ParseT Text m TcpKeepalive
 asTcpKeepalive = do
