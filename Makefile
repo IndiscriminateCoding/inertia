@@ -8,13 +8,13 @@ download:
 	git clone -b common-protos-1_3_1 \
 		https://github.com/googleapis/googleapis.git protos/googleapis
 	git clone https://github.com/envoyproxy/protoc-gen-validate.git protos/validate && \
-	  cd protos/validate && git checkout 0f2bc6c0fdac9113e3863ea6e30e5b2bd33e3b40
+		cd protos/validate && git checkout 0f2bc6c0fdac9113e3863ea6e30e5b2bd33e3b40
 	git clone https://github.com/cncf/udpa.git protos/udpa && \
 		cd protos/udpa && git checkout e8cd3a4bb307e2c810cffff99f93e96e6d7fee85
 	git clone -b v3.11.4 \
 		https://github.com/protocolbuffers/protobuf.git protos/google
 	git clone -b v0.2.1 \
-	  https://github.com/census-instrumentation/opencensus-proto.git protos/opencensus
+		https://github.com/census-instrumentation/opencensus-proto.git protos/opencensus
 	git clone -b $(ENVOY_TAG) \
 		https://github.com/envoyproxy/envoy.git protos/envoy
 
