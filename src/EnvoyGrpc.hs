@@ -60,7 +60,7 @@ runServer
   -> Map Text Destination
   -> IO ()
 runServer AdsConfig{..} lsts dsts =
-  runGrpc ts ss [ads (renderClusters dsts) (renderListeners lsts)] []
+  runGrpc ts ss [ads (renderClusters dsts) (renderListeners dsts lsts)] []
   where
     ts = tlsSettings certificate key
     ss = setLogger l . setTimeout 300 . setHost (fromString host) . setPort port $ defaultSettings
@@ -118,8 +118,8 @@ upstreamTlsContextUrl :: Text
 upstreamTlsContextUrl =
   "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext"
 
-renderListeners :: Map Text (Listener [Rule]) -> Envoy.DiscoveryResponse
-renderListeners ls = defMessage
+renderListeners :: Map Text Destination -> Map Text (Listener [Rule]) -> Envoy.DiscoveryResponse
+renderListeners ds ls = defMessage
   & field @"typeUrl" .~ listenerUrl
   & field @"resources" .~ M.foldrWithKey (\k v a -> f k v : a) [] ls
   where
@@ -134,11 +134,11 @@ renderListeners ls = defMessage
             & field @"portValue" .~ fromIntegral port
           )
         )
-        & field @"filterChains" .~ [envoyRoutes http]
+        & field @"filterChains" .~ [envoyRoutes ds http]
       )
 
-envoyRoutes :: [Rule] -> Envoy.FilterChain
-envoyRoutes routes = defMessage
+envoyRoutes :: Map Text Destination -> [Rule] -> Envoy.FilterChain
+envoyRoutes dsts routes = defMessage
   & field @"filters" .~ [ defMessage
     & field @"name" .~ "envoy.http_connection_manager"
     & field @"typedConfig" .~ (defMessage
@@ -150,27 +150,33 @@ envoyRoutes routes = defMessage
           & field @"virtualHosts" .~ [defMessage
             & field @"name" .~ "virtual_host" -- TODO
             & field @"domains" .~ ["*"]
-            & field @"routes" .~ map envoyRoute routes
+            & field @"routes" .~ map (envoyRoute dsts) routes
           ]
         )
       )
     )
   ]
 
-envoyRoute :: Rule -> Envoy.Route
-envoyRoute Rule{..} = defMessage
+envoyRoute :: Map Text Destination -> Rule -> Envoy.Route
+envoyRoute dsts Rule{..} = defMessage
   & field @"match" .~ (addPathMatcher defMessage (fromMaybe (Prefix "/") path)
     & field @"headers" .~
       map (\(n, m) -> addHeaderMatcher m $ defMessage & field @"name" .~ n) allHeaders
   )
-  & maybe
-      (field @"directResponse" .~ (defMessage
+  & addAction action
+  where
+    addAction :: Maybe Text -> Envoy.Route -> Envoy.Route
+    addAction Nothing r = r
+      & field @"directResponse" .~ (defMessage
         & field @"status" .~ 404
         & field @"body" .~ (defMessage & field @"inlineString" .~ "no route")
-      ))
-      (\t -> field @"route" .~ (defMessage & field @"cluster" .~ t))
-      action
-  where
+      )
+    addAction (Just c) r = r
+      & field @"route" .~ (defMessage
+        & field @"cluster" .~ c
+        & field @"maybe'timeout" .~ fmap protobufDuration (M.lookup c dsts >>= requestTimeout)
+      )
+
     addPathMatcher :: Envoy.RouteMatch -> Matcher -> Envoy.RouteMatch
     addPathMatcher msg (Exact t) = msg & field @"path" .~ t
     addPathMatcher msg (Prefix t) = msg & field @"prefix" .~ t

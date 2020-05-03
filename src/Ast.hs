@@ -20,7 +20,8 @@ data Destination = Destination
   , healthyPanicThreshold :: Maybe Int
   , tls :: Maybe Tls
   , tcpKeepalive :: Maybe TcpKeepalive
-  , httpOptions :: HttpOptions }
+  , httpOptions :: HttpOptions
+  , requestTimeout :: Maybe Duration }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 

@@ -141,6 +141,7 @@ destinations:
     http-options:
       idle-timeout: 123s
       http-version: downstream # h1, h2
+    request-timeout: 7s
   google:
     discovery: strict-dns
     hosts:

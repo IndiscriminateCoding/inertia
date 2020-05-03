@@ -155,7 +155,8 @@ asDestination = do
     , "healthy-panic-threshold"
     , "tls"
     , "tcp-keepalive"
-    , "http-options" ]
+    , "http-options"
+    , "request-timeout" ]
   discovery <- A.key "discovery" asDiscovery
   hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
   connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
@@ -166,6 +167,7 @@ asDestination = do
   tls <- A.keyMay "tls" (allowedKeys ["sni"] >> fmap Tls (A.keyMay "sni" asText))
   tcpKeepalive <- A.keyMay "tcp-keepalive" asTcpKeepalive
   httpOptions <- A.keyOrDefault "http-options" defaultHttpOptions asHttpOptions
+  requestTimeout <- A.keyMay "request-timeout" asDuration
   pure Destination{..}
   where
     asHost = do
