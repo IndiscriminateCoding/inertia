@@ -156,7 +156,8 @@ asDestination = do
     , "tls"
     , "tcp-keepalive"
     , "http-options"
-    , "request-timeout" ]
+    , "request-timeout"
+    , "retry-policy" ]
   discovery <- A.key "discovery" asDiscovery
   hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
   connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
@@ -168,6 +169,7 @@ asDestination = do
   tcpKeepalive <- A.keyMay "tcp-keepalive" asTcpKeepalive
   httpOptions <- A.keyOrDefault "http-options" defaultHttpOptions asHttpOptions
   requestTimeout <- A.keyMay "request-timeout" asDuration
+  retryPolicy <- A.keyMay "retry-policy" asRetryPolicy
   pure Destination{..}
   where
     asHost = do
@@ -175,6 +177,25 @@ asDestination = do
       host <- A.key "host" asText
       port <- A.key "port" asPort
       pure (host, port)
+
+asRetryPolicy :: Monad m => ParseT Text m RetryPolicy
+asRetryPolicy = do
+  allowedKeys ["retriable-status-codes", "num-retries", "per-try-timeout", "retry-back-off"]
+  retriableStatusCodes <- A.keyOrDefault
+    "retriable-status-codes"
+    [502, 503, 504]
+    (asOptList asIntegral)
+  numRetries <- A.keyOrDefault "num-retries" 0 asIntegral
+  perTryTimeout <- A.keyMay "per-try-timeout" asDuration
+  retryBackOff <- A.keyMay "retry-back-off" asRetryBackOff
+  pure RetryPolicy{..}
+
+asRetryBackOff :: Monad m => ParseT Text m RetryBackOff
+asRetryBackOff = do
+  allowedKeys ["base-interval", "max-interval"]
+  baseInterval <- A.key "base-interval" asDuration
+  maxInterval <- A.key "max-interval" asDuration
+  pure RetryBackOff{..}
 
 asHttpOptions :: Monad m => ParseT Text m HttpOptions
 asHttpOptions = do

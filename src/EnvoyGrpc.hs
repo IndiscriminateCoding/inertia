@@ -33,7 +33,7 @@ import qualified Data.Text as Text
 import qualified Proto.Envoy.Config.Cluster.V3.OutlierDetection as Envoy
 import qualified Proto.Envoy.Config.Cluster.V3.Cluster as Envoy
 import qualified Proto.Envoy.Config.Core.V3.Address as Envoy
-import qualified Proto.Envoy.Config.Core.V3.Base as Envoy
+import qualified Proto.Envoy.Config.Core.V3.Base as EnvoyBase
 import qualified Proto.Envoy.Config.Endpoint.V3.Endpoint as Envoy
 import qualified Proto.Envoy.Config.Listener.V3.Listener as Envoy
 import qualified Proto.Envoy.Config.Listener.V3.ListenerComponents as Envoy
@@ -175,7 +175,22 @@ envoyRoute dsts Rule{..} = defMessage
       & field @"route" .~ (defMessage
         & field @"cluster" .~ c
         & field @"maybe'timeout" .~ fmap protobufDuration (M.lookup c dsts >>= requestTimeout)
+        & field @"maybe'retryPolicy" .~ fmap makeRetryPolicy (M.lookup c dsts >>= retryPolicy)
       )
+
+    makeRetryPolicy :: RetryPolicy -> Envoy.RetryPolicy
+    makeRetryPolicy RetryPolicy{..} = defMessage
+      & field @"retryOn" .~
+        "gateway-error,reset,connect-failure,refused-stream,retriable-status-codes"
+      & field @"numRetries" .~ uint32 numRetries
+      & field @"maybe'perTryTimeout" .~ fmap protobufDuration perTryTimeout
+      & field @"retriableStatusCodes" .~ fmap fromIntegral retriableStatusCodes
+      & field @"maybe'retryBackOff" .~ fmap
+        (\RetryBackOff{..} -> defMessage
+          & field @"baseInterval" .~ protobufDuration baseInterval
+          & field @"maxInterval" .~ protobufDuration maxInterval
+        )
+        retryBackOff
 
     addPathMatcher :: Envoy.RouteMatch -> Matcher -> Envoy.RouteMatch
     addPathMatcher msg (Exact t) = msg & field @"path" .~ t
@@ -190,17 +205,17 @@ envoyRoute dsts Rule{..} = defMessage
       fmap (":method",) (maybeToList method) ++
       headers
 
+uint32 :: Integral n => n -> Google.UInt32Value
+uint32 n = defMessage & field @"value" .~ fromIntegral n
+
+percent :: Integral n => n -> Envoy.Percent
+percent n = defMessage & field @"value" .~ fromIntegral n
+
 renderClusters :: Map Text Destination -> Envoy.DiscoveryResponse
 renderClusters ds = defMessage
   & field @"typeUrl" .~ clusterUrl
   & field @"resources" .~ map f (M.toList ds)
   where
-    uint32 :: Integral n => n -> Google.UInt32Value
-    uint32 n = defMessage & field @"value" .~ fromIntegral n
-
-    percent :: Integral n => n -> Envoy.Percent
-    percent n = defMessage & field @"value" .~ fromIntegral n
-
     f :: (Text, Destination) -> Google.Any
     f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
@@ -236,7 +251,7 @@ renderClusters ds = defMessage
           )
       )
 
-    transportSocket :: Tls -> Envoy.TransportSocket
+    transportSocket :: Tls -> EnvoyBase.TransportSocket
     transportSocket Tls{..} = defMessage
       & field @"name" .~ "envoy.transport_sockets.tls"
       & field @"typedConfig" .~ (defMessage

@@ -21,7 +21,8 @@ data Destination = Destination
   , tls :: Maybe Tls
   , tcpKeepalive :: Maybe TcpKeepalive
   , httpOptions :: HttpOptions
-  , requestTimeout :: Maybe Duration }
+  , requestTimeout :: Maybe Duration
+  , retryPolicy :: Maybe RetryPolicy }
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 
@@ -74,6 +75,16 @@ data HttpOptions = HttpOptions
   , httpVersion :: HttpVersion }
 
 data HttpVersion = H1 | H2 | Downstream
+
+data RetryPolicy = RetryPolicy
+  { retriableStatusCodes :: [Int]
+  , numRetries :: Int
+  , perTryTimeout :: Maybe Duration
+  , retryBackOff :: Maybe RetryBackOff }
+
+data RetryBackOff = RetryBackOff
+  { baseInterval :: Duration
+  , maxInterval :: Duration }
 
 data Listener r = Listener
   { host :: Text

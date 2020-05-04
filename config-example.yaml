@@ -142,6 +142,13 @@ destinations:
       idle-timeout: 123s
       http-version: downstream # h1, h2
     request-timeout: 7s
+    retry-policy:
+      retriable-status-codes: [ 502, 504 ]
+      num-retries: 3
+      per-try-timeout: 3s
+      retry-back-off:
+        base-interval: 32ms
+        max-interval: 440ms
   google:
     discovery: strict-dns
     hosts:
