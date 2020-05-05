@@ -146,6 +146,7 @@ envoyRoutes dsts routes = defMessage
       & field @"value" .~ encodeMessage ((defMessage :: Envoy.HttpConnectionManager)
         & field @"statPrefix" .~ "http_connection_manager" -- TODO
         & field @"httpFilters" .~ [ defMessage & field @"name" .~ "envoy.filters.http.router" ]
+        & field @"upgradeConfigs" .~ [ defMessage & field @"upgradeType" .~ "websocket" ]
         & field @"routeConfig" .~ (defMessage
           & field @"virtualHosts" .~ [defMessage
             & field @"name" .~ "virtual_host" -- TODO
