@@ -316,11 +316,11 @@ asRoutes dsts = fmap f (asOptList asConfigRoute)
 
 asListener :: Monad m => ParseT Text m r -> ParseT Text m (Listener r)
 asListener p = do
+  allowedKeys ["host", "port", "http"]
   host <- keyOrDefault "host" "0.0.0.0" asText
   port <- A.key "port" asPort
   http <- A.key "http" p
-  allowedKeys ["host", "port", "http"]
-  pure (Listener host port http)
+  pure Listener{..}
 
 asCondition :: Monad m => ParseT Text m Condition
 asCondition = do
