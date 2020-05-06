@@ -147,6 +147,9 @@ envoyRoutes dsts routes = defMessage
         & field @"statPrefix" .~ "http_connection_manager" -- TODO
         & field @"httpFilters" .~ [ defMessage & field @"name" .~ "envoy.filters.http.router" ]
         & field @"upgradeConfigs" .~ [ defMessage & field @"upgradeType" .~ "websocket" ]
+        & field @"commonHttpProtocolOptions" .~ (defMessage
+          & field @"idleTimeout" .~ protobufDuration (seconds 600)
+        )
         & field @"routeConfig" .~ (defMessage
           & field @"virtualHosts" .~ [defMessage
             & field @"name" .~ "virtual_host" -- TODO
