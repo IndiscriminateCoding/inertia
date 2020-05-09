@@ -163,9 +163,13 @@ envoyRoutes dsts routes = defMessage
 
 envoyRoute :: Map Text Destination -> Rule -> Envoy.Route
 envoyRoute dsts Rule{..} = defMessage
-  & field @"match" .~ (addPathMatcher defMessage (fromMaybe (Prefix "/") path)
+  & field @"match" .~ (defMessage
+    & addPathMatcher (fromMaybe (Prefix "/") path)
     & field @"headers" .~
-      map (\(n, m) -> addHeaderMatcher m $ defMessage & field @"name" .~ n) allHeaders
+      map (\(n, m) -> defMessage
+        & field @"name" .~ n
+        & addHeaderMatcher m
+      ) allHeaders
   )
   & addAction action
   where
@@ -196,9 +200,9 @@ envoyRoute dsts Rule{..} = defMessage
         )
         retryBackOff
 
-    addPathMatcher :: Envoy.RouteMatch -> Matcher -> Envoy.RouteMatch
-    addPathMatcher msg (Exact t) = msg & field @"path" .~ t
-    addPathMatcher msg (Prefix t) = msg & field @"prefix" .~ t
+    addPathMatcher :: Matcher -> Envoy.RouteMatch -> Envoy.RouteMatch
+    addPathMatcher (Exact t) msg = msg & field @"path" .~ t
+    addPathMatcher (Prefix t) msg = msg & field @"prefix" .~ t
 
     addHeaderMatcher :: Matcher -> Envoy.HeaderMatcher -> Envoy.HeaderMatcher
     addHeaderMatcher (Exact t) msg = msg & field @"exactMatch" .~ t
@@ -223,36 +227,36 @@ renderClusters ds = defMessage
     f :: (Text, Destination) -> Google.Any
     f (name, dst@Destination{..}) = defMessage
       & field @"typeUrl" .~ clusterUrl
-      & field @"value" .~ encodeMessage (
-        addHttpVersion (httpVersion httpOptions) .
-        addLbConfig loadBalancer .
-        addCircuitBreaker circuitBreaker .
-        addOutlierDetection outlierDetection $
-        cluster name dst
-          & field @"name" .~ name
-          & field @"connectTimeout" .~ protobufDuration connectTimeout
-          & field @"lbPolicy" .~ lbPolicy loadBalancer
-          & field @"maybe'commonLbConfig" .~
-            fmap
-              (\t -> defMessage & field @"healthyPanicThreshold" .~ percent t)
-              healthyPanicThreshold
-          & field @"maybe'transportSocket" .~ fmap transportSocket tls
-          & field @"maybe'upstreamHttpProtocolOptions" .~ (
-            if any (isNothing . sni) tls
-            then Just (defMessage & field @"autoSni" .~ True)
-            else Nothing
-          )
-          & field @"maybe'upstreamConnectionOptions" .~
-            fmap
-              (\TcpKeepalive{..} -> defMessage & field @"tcpKeepalive" .~ (defMessage
-                & field @"keepaliveProbes" .~ uint32 probes
-                & field @"keepaliveTime" .~ uint32 (toSeconds time)
-                & field @"keepaliveInterval" .~ uint32 (toSeconds interval)
-              ))
-              tcpKeepalive
-          & field @"commonHttpProtocolOptions" .~ (defMessage
-            & field @"idleTimeout" .~ protobufDuration (idleTimeout httpOptions)
-          )
+      & field @"value" .~ encodeMessage (defMessage
+        & field @"name" .~ name
+        & field @"connectTimeout" .~ protobufDuration connectTimeout
+        & field @"lbPolicy" .~ lbPolicy loadBalancer
+        & field @"maybe'commonLbConfig" .~
+          fmap
+            (\t -> defMessage & field @"healthyPanicThreshold" .~ percent t)
+            healthyPanicThreshold
+        & field @"maybe'transportSocket" .~ fmap transportSocket tls
+        & field @"maybe'upstreamHttpProtocolOptions" .~ (
+          if any (isNothing . sni) tls
+          then Just (defMessage & field @"autoSni" .~ True)
+          else Nothing
+        )
+        & field @"maybe'upstreamConnectionOptions" .~
+          fmap
+            (\TcpKeepalive{..} -> defMessage & field @"tcpKeepalive" .~ (defMessage
+              & field @"keepaliveProbes" .~ uint32 probes
+              & field @"keepaliveTime" .~ uint32 (toSeconds time)
+              & field @"keepaliveInterval" .~ uint32 (toSeconds interval)
+            ))
+            tcpKeepalive
+        & field @"commonHttpProtocolOptions" .~ (defMessage
+          & field @"idleTimeout" .~ protobufDuration (idleTimeout httpOptions)
+        )
+        & addHttpVersion (httpVersion httpOptions)
+        & addLbConfig loadBalancer
+        & addCircuitBreaker circuitBreaker
+        & addOutlierDetection outlierDetection
+        & addCluster name dst
       )
 
     transportSocket :: Tls -> EnvoyBase.TransportSocket
@@ -277,22 +281,21 @@ renderClusters ds = defMessage
     addOutlierDetection :: Maybe OutlierDetection -> Envoy.Cluster -> Envoy.Cluster
     addOutlierDetection Nothing c = c
     addOutlierDetection (Just OutlierDetection{..}) c = c
-      & field @"outlierDetection" .~ (
-        addLocalOrigin localOrigin .
-        addFailurePercentage failurePercentage .
-        addSuccessRate successRate $
-        defMessage
-          & field @"maybe'interval" .~ fmap protobufDuration interval
-          & field @"maybe'baseEjectionTime" .~ fmap protobufDuration baseEjectionTime
-          & field @"maybe'maxEjectionPercent" .~ fmap uint32 maxEjectionPercent
-          & field @"maybe'consecutive5xx" .~
-            fmap (uint32 . num) consecutive5xx
-          & field @"enforcingConsecutive5xx" .~
-            uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutive5xx)
-          & field @"maybe'consecutiveGatewayFailure" .~
-            fmap (uint32 . num) consecutiveGatewayFailure
-          & field @"enforcingConsecutiveGatewayFailure" .~
-            uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutiveGatewayFailure)
+      & field @"outlierDetection" .~ (defMessage
+        & field @"maybe'interval" .~ fmap protobufDuration interval
+        & field @"maybe'baseEjectionTime" .~ fmap protobufDuration baseEjectionTime
+        & field @"maybe'maxEjectionPercent" .~ fmap uint32 maxEjectionPercent
+        & field @"maybe'consecutive5xx" .~
+          fmap (uint32 . num) consecutive5xx
+        & field @"enforcingConsecutive5xx" .~
+          uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutive5xx)
+        & field @"maybe'consecutiveGatewayFailure" .~
+          fmap (uint32 . num) consecutiveGatewayFailure
+        & field @"enforcingConsecutiveGatewayFailure" .~
+          uint32 (maybe 0 (enforcing :: Consecutive -> Int) consecutiveGatewayFailure)
+        & addLocalOrigin localOrigin
+        & addFailurePercentage failurePercentage
+        & addSuccessRate successRate
       )
 
     addSuccessRate :: Maybe SuccessRate -> Envoy.OutlierDetection -> Envoy.OutlierDetection
@@ -363,14 +366,14 @@ renderClusters ds = defMessage
         ) hs
       ]
 
-    clusterType :: Discovery -> Envoy.Cluster
-    clusterType Static = defMessage & field @"type'" .~ Envoy.Cluster'STATIC
-    clusterType StrictDns = defMessage & field @"type'" .~ Envoy.Cluster'STRICT_DNS
-    clusterType LogicalDns = defMessage & field @"type'" .~ Envoy.Cluster'LOGICAL_DNS
+    clusterType Static = Envoy.Cluster'STATIC
+    clusterType StrictDns = Envoy.Cluster'STRICT_DNS
+    clusterType LogicalDns = Envoy.Cluster'LOGICAL_DNS
 
-    cluster :: Text -> Destination -> Envoy.Cluster
-    cluster name Destination{..} =
-      clusterType discovery & field @"loadAssignment" .~ loadAssignment name hosts
+    addCluster :: Text -> Destination -> Envoy.Cluster -> Envoy.Cluster
+    addCluster name Destination{..} c = c
+      & field @"type'" .~ clusterType discovery
+      & field @"loadAssignment" .~ loadAssignment name hosts
 
 protobufDuration :: Duration -> Google.Duration
 protobufDuration (Duration ms) = defMessage
