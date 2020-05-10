@@ -1,7 +1,7 @@
 module OpenApi( Endpoint(..), parseFile ) where
 
 import Control.Exception( throw )
-import Data.Aeson ( FromJSON(..), eitherDecodeFileStrict )
+import Data.Aeson( FromJSON(..), eitherDecodeFileStrict )
 import Data.Aeson.BetterErrors
   ( ParseT
   , asObject
