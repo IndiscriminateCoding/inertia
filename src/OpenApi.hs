@@ -36,7 +36,7 @@ asEndpoints = do
       (Nothing, Just _, "/") -> pure ""
       (Just _, Nothing, "/") -> pure ""
       (Just _, Nothing, p) -> pure p
-      _ -> throwCustomError ("either (swagger & basePath) or (openapi) should be specified")
+      _ -> throwCustomError "either (swagger & basePath) or (openapi) should be specified"
   paths <- keyOrDefault "paths" [] (eachInObject . eachInObject $ asObject)
   pure $ do
     (path', methods) <- paths
