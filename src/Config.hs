@@ -324,7 +324,7 @@ asListener p = do
 
 asCondition :: Monad m => ParseT Text m Condition
 asCondition = do
-  allowedKeys ["not", "all", "any", "authority", "method", "path", "header"]
+  allowedKeys ["not", "all", "any", "authority", "method", "path", "header", "openapi"]
   not <- keyMay "not" asCondition
   all <- keyMay "all" (asNonEmptyList asCondition)
   any <- keyMay "any" (asNonEmptyList asCondition)
@@ -332,6 +332,7 @@ asCondition = do
   method <- keyMay "method" (asMatcher [])
   path <- keyMay "path" (asMatcher [])
   header <- keyMay "header" (asMatcher ["name"])
+  openapi <- keyMay "openapi" (allowedKeys ["file"] >> A.key "file" asString)
   case () of
     _ | Just n <- not -> allowedKeys ["not"] $> Not n
     _ | Just (x, xs) <- all -> allowedKeys ["all"] $> foldl' And x xs
@@ -343,6 +344,9 @@ asCondition = do
       allowedKeys ["header"]
       n <- A.key "header" . A.key "name" $ asText
       pure (Match (Header n) h)
+    _ | Just f <- openapi -> do
+      allowedKeys ["openapi"]
+      pure (OpenApi f)
     _ -> throwCustomError "can't parse condition"
 
 asMatcher :: Monad m => [Text] -> ParseT Text m Matcher

@@ -1,12 +1,12 @@
 module Ast where
 
-import Control.Exception( Exception )
-import Control.Monad.Catch( MonadThrow(..) )
+import Control.Exception( Exception, throwIO )
 import Data.Function( (&) )
 import Data.Maybe( isJust )
 import Data.Text( Text, toCaseFold )
 
 import Duration( Duration )
+import OpenApi( Endpoint( Endpoint ), parseFile )
 
 data Discovery = Static | StrictDns | LogicalDns
 
@@ -95,6 +95,7 @@ data Routes
   = NoRoute
   | Dst Text
   | When { cond :: Condition, matched :: Routes, unmatched :: Routes }
+  deriving Show
 
 data Condition
   = Never
@@ -103,12 +104,13 @@ data Condition
   | And Condition Condition
   | Or Condition Condition
   | Match Part Matcher
+  | OpenApi FilePath
   deriving Show
 
 data Part = Header Text | Authority | Method | Path
   deriving Show
 
-data Matcher = Exact Text | Prefix Text
+data Matcher = Exact Text | Prefix Text | Template [Maybe Text]
   deriving Show
 
 data Rule = Rule
@@ -123,59 +125,82 @@ newtype RoutesException = RoutesException Part
 
 instance Exception RoutesException where
 
-listenerRules :: MonadThrow m => Listener Routes -> m (Listener [Rule])
+listenerRules :: Listener Routes -> IO (Listener [Rule])
 listenerRules l@Listener{..} = fmap f (routingRules http)
   where
     f rs = l { http = rs }
 
-routingRules :: MonadThrow m => Routes -> m [Rule]
-routingRules = go emptyRule . cnst . neg . cnd . alt
+routingRules :: Routes -> IO [Rule]
+routingRules rs = do
+  rs <- openApiRoutes rs
+  rules <- traverse (foldRules emptyRule) (map (cnst . neg . cnd) (alt rs))
+  pure (rules >>= id)
   where
     emptyRule :: Rule
     emptyRule = Rule Nothing Nothing Nothing [] Nothing
 
-    go :: MonadThrow m => Rule -> Routes -> m [Rule]
-    go nr NoRoute | isJust (action nr) = error "[routingRules] NoRoute/Rule.action already set!"
-    go nr NoRoute = pure [nr]
+    openApiCondition :: Condition -> IO Condition
+    openApiCondition (OpenApi fp) =
+      let endpoint (Endpoint p m) = And (Match Method (Exact m)) (Match Path (Template p))
+          f [] = Never
+          f [e] = endpoint e
+          f (e:es) = foldr (Or . endpoint) (endpoint e) es in
+      fmap f (parseFile fp)
+    openApiCondition c = pure c
 
-    go nr (Dst _) | isJust (action nr) = error "[routingRules] Dst/Rule.action already set!"
-    go nr (Dst t) = pure [nr { action = Just t }]
+    openApiRoutes :: Routes -> IO Routes
+    openApiRoutes r@NoRoute = pure r
+    openApiRoutes r@(Dst _) = pure r
+    openApiRoutes (When c t e) = do
+      c <- openApiCondition c
+      t <- openApiRoutes t
+      e <- openApiRoutes e
+      pure (When c t e)
 
-    go nr (When (Match p@(Header n) _) _ _) | any (cmpCase n . fst) (headers nr) =
-      throwM (RoutesException p)
-    go nr (When (Match p@(Header n) m) t e) = do
-      t <- go (nr { headers = (n, m) : (headers nr) }) t
-      e <- go nr e
+    foldRules :: Rule -> Routes -> IO [Rule]
+    foldRules nr NoRoute | isJust (action nr) = error "[routingRules] NoRoute/Rule.action already set!"
+    foldRules nr NoRoute = pure [nr]
+
+    foldRules nr (Dst _) | isJust (action nr) = error "[routingRules] Dst/Rule.action already set!"
+    foldRules nr (Dst t) = pure [nr { action = Just t }]
+
+    foldRules nr (When (Match p@(Header n) _) _ _) | any (cmpCase n . fst) (headers nr) =
+      throwIO (RoutesException p)
+    foldRules nr (When (Match p@(Header n) m) t e) = do
+      t <- foldRules (nr { headers = (n, m) : (headers nr) }) t
+      e <- foldRules nr e
       pure (t ++ e)
 
-    go nr (When (Match p@Authority _) _ _) | isJust (authority nr) = throwM (RoutesException p)
-    go nr (When (Match p@Authority m) t e) = do
-      t <- go (nr { authority = Just m }) t
-      e <- go nr e
+    foldRules nr (When (Match p@Authority _) _ _) | isJust (authority nr) =
+      throwIO (RoutesException p)
+    foldRules nr (When (Match p@Authority m) t e) = do
+      t <- foldRules (nr { authority = Just m }) t
+      e <- foldRules nr e
       pure (t ++ e)
 
-    go nr (When (Match p@Method _) _ _) | isJust (method nr) = throwM (RoutesException p)
-    go nr (When (Match p@Method m) t e) = do
-      t <- go (nr { method = Just m }) t
-      e <- go nr e
+    foldRules nr (When (Match p@Method _) _ _) | isJust (method nr) = throwIO (RoutesException p)
+    foldRules nr (When (Match p@Method m) t e) = do
+      t <- foldRules (nr { method = Just m }) t
+      e <- foldRules nr e
       pure (t ++ e)
 
-    go nr (When (Match p@Path _) _ _) | isJust (path nr) = throwM (RoutesException p)
-    go nr (When (Match p@Path m) t e) = do
-      t <- go (nr { path = Just m }) t
-      e <- go nr e
+    foldRules nr (When (Match p@Path _) _ _) | isJust (path nr) = throwIO (RoutesException p)
+    foldRules nr (When (Match p@Path m) t e) = do
+      t <- foldRules (nr { path = Just m }) t
+      e <- foldRules nr e
       pure (t ++ e)
 
-    go nr (When c _ _) = error ("[routingRules] unexpected condition: " ++ show c)
+    foldRules nr (When c _ _) = error ("[routingRules] unexpected condition: " ++ show c)
 
     cmpCase a b = toCaseFold a == toCaseFold b
 
-    alt NoRoute = NoRoute
-    alt d@(Dst _) = d
-    alt (When i t e) =
-      alt t & \t ->
-      alt e & \e ->
-        foldr (\c a -> When c t a) e (alternatives i)
+    alt NoRoute = [NoRoute]
+    alt d@(Dst _) = [d]
+    alt (When i t e) = do
+      i <- alternatives i
+      t <- alt t
+      e <- alt e
+      pure (When i t e)
 
     cnd NoRoute = NoRoute
     cnd d@(Dst _) = d
@@ -204,6 +229,7 @@ routingRules = go emptyRule . cnst . neg . cnd . alt
     alternatives c@(Match _ _) = [c]
     alternatives c@Never = [c]
     alternatives c@Always = [c]
+    alternatives c@(OpenApi _) = [c]
     alternatives (Not c) = fmap Not (alternatives c)
     alternatives (And a b) = do
       a <- alternatives a
@@ -216,6 +242,7 @@ routingRules = go emptyRule . cnst . neg . cnd . alt
     conditions c@(Match _ _) = [c]
     conditions c@Never = [c]
     conditions c@Always = [c]
+    conditions c@(OpenApi _) = [c]
     conditions (Not c) = fmap Not (conditions c)
     conditions (And a b) = conditions a ++ conditions b
     conditions (Or _ _) = error "[conditions] Condition.Or should be eliminated first"
@@ -224,6 +251,7 @@ routingRules = go emptyRule . cnst . neg . cnd . alt
     simplifyNegation c@(Match _ _) = c
     simplifyNegation Never = Never
     simplifyNegation Always = Always
+    simplifyNegation c@(OpenApi _) = c
     simplifyNegation (And a b) = And (simplifyNegation a) (simplifyNegation b)
     simplifyNegation (Or a b) = Or (simplifyNegation a) (simplifyNegation b)
     simplifyNegation (Not Always) = Never

@@ -1,5 +1,6 @@
 module EnvoyGrpc ( runServer ) where
 
+import Data.Char( isAscii, isAlphaNum )
 import Data.IORef
 import Data.Functor( ($>) )
 import Data.Map.Strict( Map )
@@ -200,13 +201,29 @@ envoyRoute dsts Rule{..} = defMessage
         )
         retryBackOff
 
+    templateRe :: [Maybe Text] -> Text
+    templateRe [] = ""
+    templateRe (h:t) =
+      let str Nothing = "([.]+)"
+          str (Just x) = Text.pack (Text.unpack x >>= chr)
+          chr '/' = "/"
+          chr c | isAscii c && isAlphaNum c = [c]
+          chr c = "\\x" ++ show (fromEnum c) in
+      foldr (mappend . str) (str h) t
+
     addPathMatcher :: Matcher -> Envoy.RouteMatch -> Envoy.RouteMatch
     addPathMatcher (Exact t) msg = msg & field @"path" .~ t
     addPathMatcher (Prefix t) msg = msg & field @"prefix" .~ t
+    addPathMatcher (Template t) msg = msg
+      & field @"safeRegex" .~ (defMessage
+        & field @"regex" .~ templateRe t
+        & field @"googleRe2" .~ defMessage
+      )
 
     addHeaderMatcher :: Matcher -> Envoy.HeaderMatcher -> Envoy.HeaderMatcher
     addHeaderMatcher (Exact t) msg = msg & field @"exactMatch" .~ t
     addHeaderMatcher (Prefix t) msg = msg & field @"prefixMatch" .~ t
+    addHeaderMatcher (Template _) _ = error "unexpected header template"
 
     allHeaders =
       fmap (":authority",) (maybeToList authority) ++

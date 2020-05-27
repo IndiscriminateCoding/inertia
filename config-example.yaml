@@ -163,22 +163,30 @@ listeners:
     port: 9000
     http:
     - when:
-        authority: { value: google.com }
-      then:
-        # conditions could be nested
-      - when:
-          path: { prefix: /search }
-        then:
-        - destination: google
-    - when:
-        all:
+#        openapi:
+#          file: /tmp/petstore.yaml
+        any:
         - method: { value: GET }
-        - path:
-            prefix: /my-svc/
-        - not:
-            header:
-              name: x-route-to
-              prefix: 'proxy-'
+        - method: { value: POST }
       then:
-        # you could omit array when using single element
         destination: my-service
+    # - when:
+    #     authority: { value: google.com }
+    #   then:
+    #     # conditions could be nested
+    #   - when:
+    #       path: { prefix: /search }
+    #     then:
+    #     - destination: google
+    # - when:
+    #     all:
+    #     - method: { value: GET }
+    #     - path:
+    #         prefix: /my-svc/
+    #     - not:
+    #         header:
+    #           name: x-route-to
+    #           prefix: 'proxy-'
+    #   then:
+    #     # you could omit array when using single element
+    #     destination: my-service

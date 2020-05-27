@@ -25,7 +25,7 @@ dependencies:
 - aeson-better-errors
 - base
 - containers
-- exceptions
+#- exceptions
 - hslogger
 - http2-grpc-proto-lens
 - http2-grpc-types
