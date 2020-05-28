@@ -1,12 +1,15 @@
 module Ast where
 
-import Control.Exception( Exception, throwIO )
 import Data.Function( (&) )
-import Data.Maybe( isJust )
-import Data.Text( Text, toCaseFold )
+import Data.List( find )
+import Data.Maybe( isJust, maybe )
+import Data.Text( Text )
+
+import qualified Data.Text as T
 
 import Duration( Duration )
 import OpenApi( Endpoint( Endpoint ), parseFile )
+import Re
 
 data Discovery = Static | StrictDns | LogicalDns
 
@@ -110,8 +113,28 @@ data Condition
 data Part = Header Text | Authority | Method | Path
   deriving Show
 
-data Matcher = Exact Text | Prefix Text | Template [Maybe Text]
+data Matcher = Exact Text | Prefix Text | Template Re
   deriving Show
+
+mergeMatchers :: Matcher -> Matcher -> Maybe Matcher
+mergeMatchers e@(Exact a) (Exact b) | a == b = Just e
+mergeMatchers (Exact _) (Exact _) = Nothing
+mergeMatchers (Prefix a) p@(Prefix b) | a `T.isPrefixOf` b = Just p
+mergeMatchers p@(Prefix a) (Prefix b) | b `T.isPrefixOf` a = Just p
+mergeMatchers (Prefix _) (Prefix _) = Nothing
+mergeMatchers x@(Exact e) (Prefix p) | p `T.isPrefixOf` e = Just x
+mergeMatchers (Prefix p) x@(Exact e) | p `T.isPrefixOf` e = Just x
+mergeMatchers (Exact _) (Prefix _) = Nothing
+mergeMatchers (Prefix _) (Exact _) = Nothing
+mergeMatchers (Template t) m = mergeWithTemplate t m
+mergeMatchers m (Template t) = mergeWithTemplate t m
+
+mergeWithTemplate :: Re -> Matcher -> Maybe Matcher
+mergeWithTemplate = go
+  where
+    go t x@(Exact e) = if matchExact t e then Just x else Nothing
+    go t x@(Prefix p) = if matchPrefix t p then Just x else Nothing
+    go t (Template t') = Just . Template $ Alt t t'
 
 data Rule = Rule
   { authority :: Maybe Matcher
@@ -120,21 +143,13 @@ data Rule = Rule
   , headers :: [(Text, Matcher)]
   , action :: Maybe Text }
 
-newtype RoutesException = RoutesException Part
-  deriving Show
-
-instance Exception RoutesException where
-
 listenerRules :: Listener Routes -> IO (Listener [Rule])
 listenerRules l@Listener{..} = fmap f (routingRules http)
   where
     f rs = l { http = rs }
 
 routingRules :: Routes -> IO [Rule]
-routingRules rs = do
-  rs <- openApiRoutes rs
-  rules <- traverse (foldRules emptyRule) (map (cnst . neg . cnd) (alt rs))
-  pure (rules >>= id)
+routingRules rs = openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . alt
   where
     emptyRule :: Rule
     emptyRule = Rule Nothing Nothing Nothing [] Nothing
@@ -164,43 +179,56 @@ routingRules rs = do
     foldRules nr (Dst _) | isJust (action nr) = error "[routingRules] Dst/Rule.action already set!"
     foldRules nr (Dst t) = pure [nr { action = Just t }]
 
-    foldRules nr (When (Match p@(Header n) _) _ _) | any (cmpCase n . fst) (headers nr) =
-      throwIO (RoutesException p)
-    foldRules nr (When (Match p@(Header n) m) t e) = do
-      t <- foldRules (nr { headers = (n, m) : (headers nr) }) t
-      e <- foldRules nr e
-      pure (t ++ e)
+    foldRules nr (When (Match (Header n) m) t e) =
+      let hdrs = filter (not . cmpCase n . fst) (headers nr)
+          added =
+            case find (cmpCase n . fst) (headers nr) of
+              Nothing -> Just (n, m)
+              Just (_, m') -> fmap (n,) (mergeMatchers m m') in
+      case added of
+        Nothing -> pure []
+        Just added -> do
+          t <- foldRules (nr { headers = added : hdrs }) t
+          e <- foldRules nr e
+          pure (t ++ e)
 
-    foldRules nr (When (Match p@Authority _) _ _) | isJust (authority nr) =
-      throwIO (RoutesException p)
-    foldRules nr (When (Match p@Authority m) t e) = do
-      t <- foldRules (nr { authority = Just m }) t
-      e <- foldRules nr e
-      pure (t ++ e)
+    foldRules nr (When (Match p@Authority m) t e) =
+      let new = maybe (Just m) (mergeMatchers m) (authority nr) in
+      case new of
+        Nothing -> pure []
+        Just new -> do
+          t <- foldRules (nr { authority = Just new }) t
+          e <- foldRules nr e
+          pure (t ++ e)
 
-    foldRules nr (When (Match p@Method _) _ _) | isJust (method nr) = throwIO (RoutesException p)
-    foldRules nr (When (Match p@Method m) t e) = do
-      t <- foldRules (nr { method = Just m }) t
-      e <- foldRules nr e
-      pure (t ++ e)
+    foldRules nr (When (Match p@Method m) t e) =
+      let new = maybe (Just m) (mergeMatchers m) (method nr) in
+      case new of
+        Nothing -> pure []
+        Just new -> do
+          t <- foldRules (nr { method = Just new }) t
+          e <- foldRules nr e
+          pure (t ++ e)
 
-    foldRules nr (When (Match p@Path _) _ _) | isJust (path nr) = throwIO (RoutesException p)
-    foldRules nr (When (Match p@Path m) t e) = do
-      t <- foldRules (nr { path = Just m }) t
-      e <- foldRules nr e
-      pure (t ++ e)
+    foldRules nr (When (Match p@Path m) t e) =
+      let new = maybe (Just m) (mergeMatchers m) (path nr) in
+      case new of
+        Nothing -> pure []
+        Just new -> do
+          t <- foldRules (nr { path = Just new }) t
+          e <- foldRules nr e
+          pure (t ++ e)
 
     foldRules nr (When c _ _) = error ("[routingRules] unexpected condition: " ++ show c)
 
-    cmpCase a b = toCaseFold a == toCaseFold b
+    cmpCase a b = T.toCaseFold a == T.toCaseFold b
 
-    alt NoRoute = [NoRoute]
-    alt d@(Dst _) = [d]
-    alt (When i t e) = do
-      i <- alternatives i
-      t <- alt t
-      e <- alt e
-      pure (When i t e)
+    alt NoRoute = NoRoute
+    alt d@(Dst _) = d
+    alt (When i t e) =
+      alt t & \t ->
+      alt e & \e ->
+        foldr (\c a -> When c t a) e (alternatives i)
 
     cnd NoRoute = NoRoute
     cnd d@(Dst _) = d

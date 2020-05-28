@@ -163,11 +163,8 @@ listeners:
     port: 9000
     http:
     - when:
-#        openapi:
-#          file: /tmp/petstore.yaml
-        any:
-        - method: { value: GET }
-        - method: { value: POST }
+        openapi:
+          file: /tmp/petstore.yaml
       then:
         destination: my-service
     # - when:

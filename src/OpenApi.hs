@@ -16,8 +16,10 @@ import Data.Yaml( decodeFileEither )
 
 import qualified Data.Text as T
 
+import Re
+
 data Endpoint = Endpoint
-  { path :: [Maybe T.Text]
+  { path :: Re
   , method :: T.Text }
   deriving Show
 
@@ -42,10 +44,17 @@ asEndpoints = do
     (path', methods) <- paths
     let path = prefix <> path'
     (method, _) <- methods
-    [Endpoint (segments path) (T.toUpper method)]
+    [Endpoint (re $ segments path) (T.toUpper method)]
   where
+    fragment Nothing = Any
+    fragment (Just s) = Str s
+
+    re :: [Maybe T.Text] -> Re
+    re [] = Str ""
+    re (h:t) = foldr (Cat . fragment) (fragment h) t
+
     segments :: T.Text -> [Maybe T.Text]
-    segments p = (map (fmap $ T.reverse . T.pack) . reverse) (outer (T.unpack p) [])
+    segments p = (map (fmap $ T.reverse . T.pack)) (outer (T.unpack p) [])
 
     outer :: String -> [Maybe String] -> [Maybe String]
     outer "" a = a

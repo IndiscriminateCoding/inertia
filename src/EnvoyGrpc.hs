@@ -54,6 +54,7 @@ import qualified System.Log.Logger as L
 import Ast
 import Config( AdsConfig(..) )
 import Duration
+import Re
 
 runServer
   :: AdsConfig
@@ -201,15 +202,17 @@ envoyRoute dsts Rule{..} = defMessage
         )
         retryBackOff
 
-    templateRe :: [Maybe Text] -> Text
-    templateRe [] = ""
-    templateRe (h:t) =
-      let str Nothing = "([.]+)"
-          str (Just x) = Text.pack (Text.unpack x >>= chr)
-          chr '/' = "/"
+    templateRe :: Re -> Text
+    templateRe Any = "([.]*)"
+    templateRe (Str s) =
+      let chr '/' = "/"
           chr c | isAscii c && isAlphaNum c = [c]
           chr c = "\\x" ++ show (fromEnum c) in
-      foldr (mappend . str) (str h) t
+      Text.pack (Text.unpack s >>= chr)
+    templateRe (Cat a b) = templateRe a <> templateRe b
+    templateRe (Alt a b) =
+      let parens re = "(" <> templateRe re <> ")" in
+      parens a <> "|" <> parens b
 
     addPathMatcher :: Matcher -> Envoy.RouteMatch -> Envoy.RouteMatch
     addPathMatcher (Exact t) msg = msg & field @"path" .~ t
