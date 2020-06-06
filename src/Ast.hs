@@ -129,12 +129,13 @@ mergeMatchers (Prefix _) (Exact _) = Nothing
 mergeMatchers (Template t) m = mergeWithTemplate t m
 mergeMatchers m (Template t) = mergeWithTemplate t m
 
+matcherRegex :: Matcher -> Re
+matcherRegex (Exact t) = lit t
+matcherRegex (Prefix t) = T.foldr Chr (Any Eps) t
+matcherRegex (Template r) = r
+
 mergeWithTemplate :: Re -> Matcher -> Maybe Matcher
-mergeWithTemplate = go
-  where
-    go t x@(Exact e) = if matchExact t e then Just x else Nothing
-    go t x@(Prefix p) = if matchPrefix t p then Just x else Nothing
-    go t (Template t') = Just . Template $ Alt t t'
+mergeWithTemplate r m = fmap Template (merge r (matcherRegex m))
 
 data Rule = Rule
   { authority :: Maybe Matcher
@@ -161,6 +162,15 @@ routingRules rs = openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . 
           f [e] = endpoint e
           f (e:es) = foldr (Or . endpoint) (endpoint e) es in
       fmap f (parseFile fp)
+    openApiCondition (Not c) = fmap Not (openApiCondition c)
+    openApiCondition (Or a b) = do
+      a <- openApiCondition a
+      b <- openApiCondition b
+      pure (Or a b)
+    openApiCondition (And a b) = do
+      a <- openApiCondition a
+      b <- openApiCondition b
+      pure (And a b)
     openApiCondition c = pure c
 
     openApiRoutes :: Routes -> IO Routes
@@ -173,7 +183,8 @@ routingRules rs = openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . 
       pure (When c t e)
 
     foldRules :: Rule -> Routes -> IO [Rule]
-    foldRules nr NoRoute | isJust (action nr) = error "[routingRules] NoRoute/Rule.action already set!"
+    foldRules nr NoRoute | isJust (action nr) =
+      error "[routingRules] NoRoute/Rule.action already set!"
     foldRules nr NoRoute = pure [nr]
 
     foldRules nr (Dst _) | isJust (action nr) = error "[routingRules] Dst/Rule.action already set!"

@@ -163,8 +163,10 @@ listeners:
     port: 9000
     http:
     - when:
-        openapi:
-          file: /tmp/petstore.yaml
+        all:
+        - path: { prefix: /v1 }
+        - openapi:
+            file: /tmp/petstore.yaml
       then:
         destination: my-service
     # - when:

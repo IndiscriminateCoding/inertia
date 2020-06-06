@@ -16,7 +16,8 @@ import Data.Yaml( decodeFileEither )
 
 import qualified Data.Text as T
 
-import Re
+import Re( Re )
+import qualified Re
 
 data Endpoint = Endpoint
   { path :: Re
@@ -46,12 +47,11 @@ asEndpoints = do
     (method, _) <- methods
     [Endpoint (re $ segments path) (T.toUpper method)]
   where
-    fragment Nothing = Any
-    fragment (Just s) = Str s
-
     re :: [Maybe T.Text] -> Re
-    re [] = Str ""
-    re (h:t) = foldr (Cat . fragment) (fragment h) t
+    re =
+      let f r Nothing = Re.Any r
+          f r (Just t) = T.foldr Re.Chr r t in
+      foldl f (Re.Alt Re.Eps (Re.Chr '/' Re.Eps))
 
     segments :: T.Text -> [Maybe T.Text]
     segments p = (map (fmap $ T.reverse . T.pack)) (outer (T.unpack p) [])

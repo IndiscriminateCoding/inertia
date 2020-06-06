@@ -202,17 +202,20 @@ envoyRoute dsts Rule{..} = defMessage
         )
         retryBackOff
 
+    templateOpt :: Re -> Text
+    templateOpt r = "(" <> templateRe r <> ")?"
+
     templateRe :: Re -> Text
-    templateRe Any = "([.]*)"
-    templateRe (Str s) =
+    templateRe Eps = ""
+    templateRe (Any r) = "[.]*" <> templateRe r
+    templateRe (Chr c r) =
       let chr '/' = "/"
           chr c | isAscii c && isAlphaNum c = [c]
           chr c = "\\x" ++ show (fromEnum c) in
-      Text.pack (Text.unpack s >>= chr)
-    templateRe (Cat a b) = templateRe a <> templateRe b
-    templateRe (Alt a b) =
-      let parens re = "(" <> templateRe re <> ")" in
-      parens a <> "|" <> parens b
+      Text.pack (chr c) <> templateRe r
+    templateRe (Alt Eps r) = templateOpt r
+    templateRe (Alt r Eps) = templateOpt r
+    templateRe (Alt a b) = "(" <> templateRe a <> "|" <> templateRe b <> ")"
 
     addPathMatcher :: Matcher -> Envoy.RouteMatch -> Envoy.RouteMatch
     addPathMatcher (Exact t) msg = msg & field @"path" .~ t
