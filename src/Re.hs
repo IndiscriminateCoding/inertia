@@ -12,14 +12,8 @@ data Re
   | Alt Re Re
   deriving (Eq, Show)
 
-lit :: Text -> Re
-lit = T.foldr Chr Eps
-
-mergeAlts :: Maybe Re -> Maybe Re -> Maybe Re
-mergeAlts Nothing Nothing = Nothing
-mergeAlts (Just a) (Just b) = Just (Alt a b)
-mergeAlts Nothing a = a
-mergeAlts a Nothing = a
+literal :: Text -> Re
+literal = T.foldr Chr Eps
 
 merge :: Re -> Re -> Maybe Re
 merge r = listToMaybe . mergeL r

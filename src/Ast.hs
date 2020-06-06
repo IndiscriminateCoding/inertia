@@ -130,7 +130,7 @@ mergeMatchers (Template t) m = mergeWithTemplate t m
 mergeMatchers m (Template t) = mergeWithTemplate t m
 
 matcherRegex :: Matcher -> Re
-matcherRegex (Exact t) = lit t
+matcherRegex (Exact t) = literal t
 matcherRegex (Prefix t) = T.foldr Chr (Any Eps) t
 matcherRegex (Template r) = r
 
