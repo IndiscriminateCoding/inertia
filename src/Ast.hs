@@ -2,9 +2,11 @@ module Ast where
 
 import Data.Function( (&) )
 import Data.List( find )
+import Data.Map.Strict( Map )
 import Data.Maybe( isJust, maybe )
 import Data.Text( Text )
 
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 
 import Duration( Duration )
@@ -114,7 +116,18 @@ data Part = Header Text | Authority | Method | Path
   deriving Show
 
 data Matcher = Exact Text | Prefix Text | Template Re
-  deriving Show
+  deriving (Eq, Show)
+
+template :: Re -> Matcher
+template Eps = Exact ""
+template t@(Chr c r) =
+  case template r of
+    Exact t -> Exact (T.cons c t)
+    Prefix t -> Prefix (T.cons c t)
+    Template _ -> Template t
+template (Any Eps) = Prefix ""
+template t@(Any _) = Template t
+template t@(Alt _ _) = Template t
 
 mergeMatchers :: Matcher -> Matcher -> Maybe Matcher
 mergeMatchers e@(Exact a) (Exact b) | a == b = Just e
@@ -135,13 +148,13 @@ matcherRegex (Prefix t) = T.foldr Chr (Any Eps) t
 matcherRegex (Template r) = r
 
 mergeWithTemplate :: Re -> Matcher -> Maybe Matcher
-mergeWithTemplate r m = fmap Template (merge r (matcherRegex m))
+mergeWithTemplate r m = fmap template (merge r (matcherRegex m))
 
 data Rule = Rule
   { authority :: Maybe Matcher
   , method :: Maybe Matcher
   , path :: Maybe Matcher
-  , headers :: [(Text, Matcher)]
+  , headers :: Map Text Matcher
   , action :: Maybe Text }
 
 listenerRules :: Listener Routes -> IO (Listener [Rule])
@@ -150,10 +163,32 @@ listenerRules l@Listener{..} = fmap f (routingRules http)
     f rs = l { http = rs }
 
 routingRules :: Routes -> IO [Rule]
-routingRules rs = openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . alt
+routingRules rs = openApiRoutes rs >>=
+    {- fmap mergeAdjacent . -} foldRules emptyRule . cnst . neg . cnd . alt
   where
     emptyRule :: Rule
-    emptyRule = Rule Nothing Nothing Nothing [] Nothing
+    emptyRule = Rule Nothing Nothing Nothing M.empty Nothing
+
+    bothMatchers :: Matcher -> Matcher -> Matcher
+    bothMatchers a b | a == b = a
+    bothMatchers a b = template . alternate (matcherRegex a) $ matcherRegex b
+
+    mergeAdjacent :: [Rule] -> [Rule]
+    mergeAdjacent [] = []
+    mergeAdjacent a@[_] = a
+    mergeAdjacent (a : x@(b : _)) | action a /= action b = a : mergeAdjacent x
+    mergeAdjacent (a : b : t) =
+      let f (Just a) (Just b) = Just (bothMatchers a b)
+          f Nothing a = a
+          f a Nothing = a
+          r = Rule
+            { authority = f (authority a) (authority b)
+            , method = f (method a) (method b)
+            , path = f (path a) (path b)
+            , headers = M.unionWith bothMatchers (headers a) (headers b)
+            , action = action a
+            } in
+      mergeAdjacent (r:t)
 
     openApiCondition :: Condition -> IO Condition
     openApiCondition (OpenApi fp) =
@@ -191,15 +226,15 @@ routingRules rs = openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . 
     foldRules nr (Dst t) = pure [nr { action = Just t }]
 
     foldRules nr (When (Match (Header n) m) t e) =
-      let hdrs = filter (not . cmpCase n . fst) (headers nr)
+      let lcname = T.toLower n
           added =
-            case find (cmpCase n . fst) (headers nr) of
-              Nothing -> Just (n, m)
-              Just (_, m') -> fmap (n,) (mergeMatchers m m') in
+            case M.lookup lcname (headers nr) of
+              Nothing -> Just m
+              Just m' -> mergeMatchers m m' in
       case added of
         Nothing -> pure []
         Just added -> do
-          t <- foldRules (nr { headers = added : hdrs }) t
+          t <- foldRules (nr { headers = M.insert lcname added (headers nr) }) t
           e <- foldRules nr e
           pure (t ++ e)
 
@@ -231,8 +266,6 @@ routingRules rs = openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . 
           pure (t ++ e)
 
     foldRules nr (When c _ _) = error ("[routingRules] unexpected condition: " ++ show c)
-
-    cmpCase a b = T.toCaseFold a == T.toCaseFold b
 
     alt NoRoute = NoRoute
     alt d@(Dst _) = d

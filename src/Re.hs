@@ -15,6 +15,10 @@ data Re
 literal :: Text -> Re
 literal = T.foldr Chr Eps
 
+alternate :: Re -> Re -> Re
+alternate a b | a == b = a
+alternate a b = Alt a b
+
 merge :: Re -> Re -> Maybe Re
 merge r = listToMaybe . mergeL r
 

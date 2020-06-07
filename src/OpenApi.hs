@@ -54,6 +54,7 @@ asEndpoints = do
       foldl f (Re.Alt Re.Eps (Re.Chr '/' Re.Eps))
 
     segments :: T.Text -> [Maybe T.Text]
+    segments p | not (T.null p) && T.last p == '/' = segments (T.init p)
     segments p = (map (fmap $ T.reverse . T.pack)) (outer (T.unpack p) [])
 
     outer :: String -> [Maybe String] -> [Maybe String]

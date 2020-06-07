@@ -234,7 +234,7 @@ envoyRoute dsts Rule{..} = defMessage
     allHeaders =
       fmap (":authority",) (maybeToList authority) ++
       fmap (":method",) (maybeToList method) ++
-      headers
+      M.toList headers
 
 uint32 :: Integral n => n -> Google.UInt32Value
 uint32 n = defMessage & field @"value" .~ fromIntegral n
