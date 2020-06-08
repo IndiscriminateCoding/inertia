@@ -108,11 +108,8 @@ data Condition
   | Not Condition
   | And Condition Condition
   | Or Condition Condition
-  | Match Part Matcher
+  | Match Text Matcher
   | OpenApi FilePath
-  deriving Show
-
-data Part = Header Text | Authority | Method | Path
   deriving Show
 
 data Matcher = Exact Text | Prefix Text | Template Re
@@ -151,12 +148,8 @@ matcherRegex (Template r) = r
 mergeWithTemplate :: Re -> Matcher -> Maybe Matcher
 mergeWithTemplate r m = fmap template (merge r (matcherRegex m))
 
--- TODO: use HTTP/2 pseudo headers for authority/method/path
 data Rule = Rule
-  { authority :: Maybe Matcher
-  , method :: Maybe Matcher
-  , path :: Maybe Matcher
-  , headers :: Map Text Matcher
+  { headers :: Map Text Matcher
   , action :: Maybe Text }
 
 listenerRules :: Listener Routes -> IO (Listener [Rule])
@@ -169,7 +162,7 @@ routingRules rs = openApiRoutes rs >>=
     {- fmap mergeAdjacent . -} foldRules emptyRule . cnst . neg . cnd . alt
   where
     emptyRule :: Rule
-    emptyRule = Rule Nothing Nothing Nothing M.empty Nothing
+    emptyRule = Rule M.empty Nothing
 
     bothMatchers :: Matcher -> Matcher -> Matcher
     bothMatchers a b | a == b = a
@@ -180,21 +173,15 @@ routingRules rs = openApiRoutes rs >>=
     mergeAdjacent a@[_] = a
     mergeAdjacent (a : x@(b : _)) | action a /= action b = a : mergeAdjacent x
     mergeAdjacent (a : b : t) =
-      let f (Just a) (Just b) = Just (bothMatchers a b)
-          f Nothing a = a
-          f a Nothing = a
-          r = Rule
-            { authority = f (authority a) (authority b)
-            , method = f (method a) (method b)
-            , path = f (path a) (path b)
-            , headers = M.unionWith bothMatchers (headers a) (headers b)
+      let r = Rule
+            { headers = M.unionWith bothMatchers (headers a) (headers b)
             , action = action a
             } in
       mergeAdjacent (r:t)
 
     openApiCondition :: Condition -> IO Condition
     openApiCondition (OpenApi fp) =
-      let endpoint (Endpoint p m) = And (Match Method (Exact m)) (Match Path (Template p))
+      let endpoint (Endpoint p m) = And (Match ":method" (Exact m)) (Match ":path" (Template p))
           f [] = Never
           f [e] = endpoint e
           f (e:es) = foldr (Or . endpoint) (endpoint e) es in
@@ -227,7 +214,7 @@ routingRules rs = openApiRoutes rs >>=
     foldRules nr (Dst _) | isJust (action nr) = error "[routingRules] Dst/Rule.action already set!"
     foldRules nr (Dst t) = pure [nr { action = Just t }]
 
-    foldRules nr (When (Match (Header n) m) t e) =
+    foldRules nr (When (Match n m) t e) =
       let lcname = T.toLower n
           added =
             case M.lookup lcname (headers nr) of
@@ -237,33 +224,6 @@ routingRules rs = openApiRoutes rs >>=
         Nothing -> pure []
         Just added -> do
           t <- foldRules (nr { headers = M.insert lcname added (headers nr) }) t
-          e <- foldRules nr e
-          pure (t ++ e)
-
-    foldRules nr (When (Match p@Authority m) t e) =
-      let new = maybe (Just m) (mergeMatchers m) (authority nr) in
-      case new of
-        Nothing -> pure []
-        Just new -> do
-          t <- foldRules (nr { authority = Just new }) t
-          e <- foldRules nr e
-          pure (t ++ e)
-
-    foldRules nr (When (Match p@Method m) t e) =
-      let new = maybe (Just m) (mergeMatchers m) (method nr) in
-      case new of
-        Nothing -> pure []
-        Just new -> do
-          t <- foldRules (nr { method = Just new }) t
-          e <- foldRules nr e
-          pure (t ++ e)
-
-    foldRules nr (When (Match p@Path m) t e) =
-      let new = maybe (Just m) (mergeMatchers m) (path nr) in
-      case new of
-        Nothing -> pure []
-        Just new -> do
-          t <- foldRules (nr { path = Just new }) t
           e <- foldRules nr e
           pure (t ++ e)
 

@@ -337,13 +337,13 @@ asCondition = do
     _ | Just n <- not -> allowedKeys ["not"] $> Not n
     _ | Just (x, xs) <- all -> allowedKeys ["all"] $> foldl' And x xs
     _ | Just (x, xs) <- any -> allowedKeys ["any"] $> foldl' Or x xs
-    _ | Just a <- authority -> allowedKeys ["authority"] $> Match Authority a
-    _ | Just m <- method -> allowedKeys ["method"] $> Match Method m
-    _ | Just p <- path -> allowedKeys ["path"] $> Match Path p
+    _ | Just a <- authority -> allowedKeys ["authority"] $> Match ":authority" a
+    _ | Just m <- method -> allowedKeys ["method"] $> Match ":method" m
+    _ | Just p <- path -> allowedKeys ["path"] $> Match ":path" p
     _ | Just h <- header -> do
       allowedKeys ["header"]
       n <- A.key "header" . A.key "name" $ asText
-      pure (Match (Header n) h)
+      pure (Match n h)
     _ | Just f <- openapi -> do
       allowedKeys ["openapi"]
       pure (OpenApi f)

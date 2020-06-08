@@ -166,12 +166,12 @@ envoyRoutes dsts routes = defMessage
 envoyRoute :: Map Text Destination -> Rule -> Envoy.Route
 envoyRoute dsts Rule{..} = defMessage
   & field @"match" .~ (defMessage
-    & addPathMatcher (fromMaybe (Prefix "/") path)
+    & addPathMatcher (fromMaybe (Prefix "/") (M.lookup ":path" headers))
     & field @"headers" .~
       map (\(n, m) -> defMessage
         & field @"name" .~ n
         & addHeaderMatcher m
-      ) allHeaders
+      ) (M.toList (M.delete ":path" headers))
   )
   & addAction action
   where
@@ -230,11 +230,6 @@ envoyRoute dsts Rule{..} = defMessage
     addHeaderMatcher (Exact t) msg = msg & field @"exactMatch" .~ t
     addHeaderMatcher (Prefix t) msg = msg & field @"prefixMatch" .~ t
     addHeaderMatcher (Template _) _ = error "unexpected header template"
-
-    allHeaders =
-      fmap (":authority",) (maybeToList authority) ++
-      fmap (":method",) (maybeToList method) ++
-      M.toList headers
 
 uint32 :: Integral n => n -> Google.UInt32Value
 uint32 n = defMessage & field @"value" .~ fromIntegral n
