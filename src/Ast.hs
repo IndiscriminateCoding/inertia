@@ -100,7 +100,7 @@ data Routes
   = NoRoute
   | Dst Text
   | When { cond :: Condition, matched :: Routes, unmatched :: Routes }
-  deriving Show
+  deriving (Eq, Show)
 
 data Condition
   = Never
@@ -110,7 +110,7 @@ data Condition
   | Or Condition Condition
   | Match Text Re
   | OpenApi FilePath
-  deriving Show
+  deriving (Eq, Show)
 
 data Rule = Rule
   { headers :: Map Text Re
@@ -124,7 +124,7 @@ listenerRules l@Listener{..} = fmap f (routingRules http)
 
 routingRules :: Routes -> IO [Rule]
 routingRules rs =
-  openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . alt
+  openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . alt . simplifyWhen
   where
     emptyRule :: Rule
     emptyRule = Rule M.empty Nothing
@@ -178,6 +178,13 @@ routingRules rs =
           pure (t ++ e)
 
     foldRules nr (When c _ _) = error ("[routingRules] unexpected condition: " ++ show c)
+
+    simplifyWhen (When c t e) =
+      let f (When c' t' e') e | e == e' = simplifyWhen (When (And c c') t' e)
+          f t (When c' t' e') | t == t' = simplifyWhen (When (Or c c') t e')
+          f t e = When c t e in
+      f (simplifyWhen t) (simplifyWhen e)
+    simplifyWhen x = x
 
     alt NoRoute = NoRoute
     alt d@(Dst _) = d
