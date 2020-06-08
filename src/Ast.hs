@@ -124,6 +124,7 @@ listenerRules l@Listener{..} = fmap f (routingRules http)
 data DecisionTree
   = Action (Maybe Text)
   | Select Text [(Re, DecisionTree)]
+  deriving Eq
 
 decisionTree :: Rule -> DecisionTree
 decisionTree Rule{..} = M.foldrWithKey f (Action action) headers
@@ -136,13 +137,13 @@ orElseRule s@(Select n dts) r@Rule{..} =
   case M.minViewWithKey headers of
     Nothing ->
       let f (re, dt) = (re, dt `orElseRule` r) in
-      Select n (map f dts ++ [(always, Action action)])
+      Select n (map f ((always, Action action) : dts))
     Just ((n', re'), headers') | n' < n ->
       Select n' [(re', decisionTree (Rule headers' action)), (always, s)]
     Just ((n', _), _) | n' > n ->
-      Select n (dts ++ [(always, decisionTree r)])
+      Select n ((always, decisionTree r) : dts)
     Just ((n', re'), headers') {- | n' == n -} ->
-      Select n (dts ++ [(re', decisionTree (Rule headers' action))])
+      Select n ((re', decisionTree $ Rule headers' action) : dts)
 
 decisionRules :: DecisionTree -> [Rule]
 decisionRules = f M.empty
@@ -153,23 +154,44 @@ decisionRules = f M.empty
       (re, dt) <- dts
       f (M.insert hdr re headers) dt
 
+removeUnreachable :: DecisionTree -> DecisionTree
+removeUnreachable a@(Action _) = a
+removeUnreachable (Select n dts) = Select n (f Nothing dts)
+  where
+    f _ [] = []
+    f Nothing (h@(r, _):t) = h : f (Just r) t
+    f (Just r) (h@(r', _):t) =
+      let acc = Just (alternate r r') in
+      case merge r r' of
+        Just rr | rr == r' -> f acc t
+        _ -> h : f acc t
+
+mergeAdjacent :: DecisionTree -> DecisionTree
+mergeAdjacent a@(Action _) = a
+mergeAdjacent (Select n dts) = Select n dts'
+  where
+    dts' = f $ map (\(re, dt) -> (re, mergeAdjacent dt)) dts
+
+    f [] = []
+    f [a] = [a]
+    f ((r, d) : (r', d') : t) | d == d' = (alternate r r', d) : f t
+    f (a : b : t) = a : f (b : t)
+
 routingRules :: Routes -> IO [Rule]
-routingRules rs = openApiRoutes rs >>=
-    {- fmap mergeAdjacent . -} foldRules emptyRule . cnst . neg . cnd . alt
+routingRules rs =
+  openApiRoutes rs >>= fmap optimize . foldRules emptyRule . cnst . neg . cnd . alt
   where
     emptyRule :: Rule
     emptyRule = Rule M.empty Nothing
 
-    mergeAdjacent :: [Rule] -> [Rule]
-    mergeAdjacent [] = []
-    mergeAdjacent a@[_] = a
-    mergeAdjacent (a : x@(b : _)) | action a /= action b = a : mergeAdjacent x
-    mergeAdjacent (a : b : t) =
-      let r = Rule
-            { headers = M.unionWith alternate (headers a) (headers b)
-            , action = action a
-            } in
-      mergeAdjacent (r:t)
+    removeAlways :: Rule -> Rule
+    removeAlways Rule{..} = Rule (M.filter (/= always) headers) action
+
+    optimize :: [Rule] -> [Rule]
+    optimize [] = []
+    optimize (h:t) =
+      map removeAlways . decisionRules . mergeAdjacent . removeUnreachable
+        $ foldl orElseRule (decisionTree h) t
 
     openApiCondition :: Condition -> IO Condition
     openApiCondition (OpenApi fp) =
