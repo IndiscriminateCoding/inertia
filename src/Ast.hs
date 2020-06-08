@@ -151,6 +151,7 @@ matcherRegex (Template r) = r
 mergeWithTemplate :: Re -> Matcher -> Maybe Matcher
 mergeWithTemplate r m = fmap template (merge r (matcherRegex m))
 
+-- TODO: use HTTP/2 pseudo headers for authority/method/path
 data Rule = Rule
   { authority :: Maybe Matcher
   , method :: Maybe Matcher
