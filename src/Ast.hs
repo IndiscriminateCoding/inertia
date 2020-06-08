@@ -121,6 +121,38 @@ listenerRules l@Listener{..} = fmap f (routingRules http)
   where
     f rs = l { http = rs }
 
+data DecisionTree
+  = Action (Maybe Text)
+  | Select Text [(Re, DecisionTree)]
+
+decisionTree :: Rule -> DecisionTree
+decisionTree Rule{..} = M.foldrWithKey f (Action action) headers
+  where
+    f name re dt = Select name [(re, dt)]
+
+orElseRule :: DecisionTree -> Rule -> DecisionTree
+orElseRule a@(Action _) _ = a
+orElseRule s@(Select n dts) r@Rule{..} =
+  case M.minViewWithKey headers of
+    Nothing ->
+      let f (re, dt) = (re, dt `orElseRule` r) in
+      Select n (map f dts ++ [(always, Action action)])
+    Just ((n', re'), headers') | n' < n ->
+      Select n' [(re', decisionTree (Rule headers' action)), (always, s)]
+    Just ((n', _), _) | n' > n ->
+      Select n (dts ++ [(always, decisionTree r)])
+    Just ((n', re'), headers') {- | n' == n -} ->
+      Select n (dts ++ [(re', decisionTree (Rule headers' action))])
+
+decisionRules :: DecisionTree -> [Rule]
+decisionRules = f M.empty
+  where
+    f :: Map Text Re -> DecisionTree -> [Rule]
+    f headers (Action action) = [Rule{..}]
+    f headers (Select hdr dts) = do
+      (re, dt) <- dts
+      f (M.insert hdr re headers) dt
+
 routingRules :: Routes -> IO [Rule]
 routingRules rs = openApiRoutes rs >>=
     {- fmap mergeAdjacent . -} foldRules emptyRule . cnst . neg . cnd . alt

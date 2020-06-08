@@ -16,7 +16,10 @@ literal :: Text -> Re
 literal = T.foldr Chr Eps
 
 prefix :: Text -> Re
-prefix = T.foldr Chr (Any Eps)
+prefix = T.foldr Chr always
+
+always :: Re
+always = Any Eps
 
 alternate :: Re -> Re -> Re
 alternate a b | a == b = a
