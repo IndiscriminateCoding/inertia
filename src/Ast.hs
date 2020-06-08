@@ -118,6 +118,7 @@ data Part = Header Text | Authority | Method | Path
 data Matcher = Exact Text | Prefix Text | Template Re
   deriving (Eq, Show)
 
+-- TODO: replace Matcher with Re and perform final conversion later
 template :: Re -> Matcher
 template Eps = Exact ""
 template t@(Chr c r) =
