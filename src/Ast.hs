@@ -108,48 +108,12 @@ data Condition
   | Not Condition
   | And Condition Condition
   | Or Condition Condition
-  | Match Text Matcher
+  | Match Text Re
   | OpenApi FilePath
   deriving Show
 
-data Matcher = Exact Text | Prefix Text | Template Re
-  deriving (Eq, Show)
-
--- TODO: replace Matcher with Re and perform final conversion later
-template :: Re -> Matcher
-template Eps = Exact ""
-template t@(Chr c r) =
-  case template r of
-    Exact t -> Exact (T.cons c t)
-    Prefix t -> Prefix (T.cons c t)
-    Template _ -> Template t
-template (Any Eps) = Prefix ""
-template t@(Any _) = Template t
-template t@(Alt _ _) = Template t
-
-mergeMatchers :: Matcher -> Matcher -> Maybe Matcher
-mergeMatchers e@(Exact a) (Exact b) | a == b = Just e
-mergeMatchers (Exact _) (Exact _) = Nothing
-mergeMatchers (Prefix a) p@(Prefix b) | a `T.isPrefixOf` b = Just p
-mergeMatchers p@(Prefix a) (Prefix b) | b `T.isPrefixOf` a = Just p
-mergeMatchers (Prefix _) (Prefix _) = Nothing
-mergeMatchers x@(Exact e) (Prefix p) | p `T.isPrefixOf` e = Just x
-mergeMatchers (Prefix p) x@(Exact e) | p `T.isPrefixOf` e = Just x
-mergeMatchers (Exact _) (Prefix _) = Nothing
-mergeMatchers (Prefix _) (Exact _) = Nothing
-mergeMatchers (Template t) m = mergeWithTemplate t m
-mergeMatchers m (Template t) = mergeWithTemplate t m
-
-matcherRegex :: Matcher -> Re
-matcherRegex (Exact t) = literal t
-matcherRegex (Prefix t) = T.foldr Chr (Any Eps) t
-matcherRegex (Template r) = r
-
-mergeWithTemplate :: Re -> Matcher -> Maybe Matcher
-mergeWithTemplate r m = fmap template (merge r (matcherRegex m))
-
 data Rule = Rule
-  { headers :: Map Text Matcher
+  { headers :: Map Text Re
   , action :: Maybe Text }
 
 listenerRules :: Listener Routes -> IO (Listener [Rule])
@@ -164,24 +128,20 @@ routingRules rs = openApiRoutes rs >>=
     emptyRule :: Rule
     emptyRule = Rule M.empty Nothing
 
-    bothMatchers :: Matcher -> Matcher -> Matcher
-    bothMatchers a b | a == b = a
-    bothMatchers a b = template . alternate (matcherRegex a) $ matcherRegex b
-
     mergeAdjacent :: [Rule] -> [Rule]
     mergeAdjacent [] = []
     mergeAdjacent a@[_] = a
     mergeAdjacent (a : x@(b : _)) | action a /= action b = a : mergeAdjacent x
     mergeAdjacent (a : b : t) =
       let r = Rule
-            { headers = M.unionWith bothMatchers (headers a) (headers b)
+            { headers = M.unionWith alternate (headers a) (headers b)
             , action = action a
             } in
       mergeAdjacent (r:t)
 
     openApiCondition :: Condition -> IO Condition
     openApiCondition (OpenApi fp) =
-      let endpoint (Endpoint p m) = And (Match ":method" (Exact m)) (Match ":path" (Template p))
+      let endpoint (Endpoint p m) = And (Match ":method" (literal m)) (Match ":path" p)
           f [] = Never
           f [e] = endpoint e
           f (e:es) = foldr (Or . endpoint) (endpoint e) es in
@@ -219,7 +179,7 @@ routingRules rs = openApiRoutes rs >>=
           added =
             case M.lookup lcname (headers nr) of
               Nothing -> Just m
-              Just m' -> mergeMatchers m m' in
+              Just m' -> merge m m' in
       case added of
         Nothing -> pure []
         Just added -> do

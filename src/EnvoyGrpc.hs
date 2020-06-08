@@ -163,14 +163,27 @@ envoyRoutes dsts routes = defMessage
     )
   ]
 
+data Matcher = Exact Text | Prefix Text | Template Re
+
+matcher :: Re -> Matcher
+matcher Eps = Exact ""
+matcher t@(Chr c r) =
+  case matcher r of
+    Exact t -> Exact (Text.cons c t)
+    Prefix t -> Prefix (Text.cons c t)
+    Template _ -> Template t
+matcher (Any Eps) = Prefix ""
+matcher t@(Any _) = Template t
+matcher t@(Alt _ _) = Template t
+
 envoyRoute :: Map Text Destination -> Rule -> Envoy.Route
 envoyRoute dsts Rule{..} = defMessage
   & field @"match" .~ (defMessage
-    & addPathMatcher (fromMaybe (Prefix "/") (M.lookup ":path" headers))
+    & addPathMatcher (matcher $ fromMaybe (prefix "/") (M.lookup ":path" headers))
     & field @"headers" .~
       map (\(n, m) -> defMessage
         & field @"name" .~ n
-        & addHeaderMatcher m
+        & addHeaderMatcher (matcher m)
       ) (M.toList (M.delete ":path" headers))
   )
   & addAction action

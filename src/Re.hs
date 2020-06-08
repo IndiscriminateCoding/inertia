@@ -15,6 +15,9 @@ data Re
 literal :: Text -> Re
 literal = T.foldr Chr Eps
 
+prefix :: Text -> Re
+prefix = T.foldr Chr (Any Eps)
+
 alternate :: Re -> Re -> Re
 alternate a b | a == b = a
 alternate a b = Alt a b

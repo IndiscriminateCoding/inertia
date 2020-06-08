@@ -28,6 +28,7 @@ import qualified Data.Text as T
 
 import Ast
 import Duration
+import Re
 
 fileConfig :: FilePath -> IO Config
 fileConfig path | ".json" `isSuffixOf` path =
@@ -328,10 +329,10 @@ asCondition = do
   not <- keyMay "not" asCondition
   all <- keyMay "all" (asNonEmptyList asCondition)
   any <- keyMay "any" (asNonEmptyList asCondition)
-  authority <- keyMay "authority" (asMatcher [])
-  method <- keyMay "method" (asMatcher [])
-  path <- keyMay "path" (asMatcher [])
-  header <- keyMay "header" (asMatcher ["name"])
+  authority <- keyMay "authority" (asRegex [])
+  method <- keyMay "method" (asRegex [])
+  path <- keyMay "path" (asRegex [])
+  header <- keyMay "header" (asRegex ["name"])
   openapi <- keyMay "openapi" (allowedKeys ["file"] >> A.key "file" asString)
   case () of
     _ | Just n <- not -> allowedKeys ["not"] $> Not n
@@ -349,11 +350,11 @@ asCondition = do
       pure (OpenApi f)
     _ -> throwCustomError "can't parse condition"
 
-asMatcher :: Monad m => [Text] -> ParseT Text m Matcher
-asMatcher flds = do
+asRegex :: Monad m => [Text] -> ParseT Text m Re
+asRegex flds = do
   v <- keyMay "value" asText
   p <- keyMay "prefix" asText
   case (v, p) of
-    (Just v, Nothing) -> allowedKeys ("value":flds) $> Exact v
-    (Nothing, Just p) -> allowedKeys ("prefix":flds) $> Prefix p
+    (Just v, Nothing) -> allowedKeys ("value":flds) $> literal v
+    (Nothing, Just p) -> allowedKeys ("prefix":flds) $> prefix p
     _ -> throwCustomError "Exactly one of [value, prefix] should be specified"
