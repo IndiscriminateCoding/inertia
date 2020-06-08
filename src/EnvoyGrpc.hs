@@ -1,6 +1,5 @@
 module EnvoyGrpc ( runServer ) where
 
-import Data.Char( isAscii, isAlphaNum )
 import Data.IORef
 import Data.Functor( ($>) )
 import Data.Map.Strict( Map )
@@ -215,20 +214,8 @@ envoyRoute dsts Rule{..} = defMessage
         )
         retryBackOff
 
-    templateOpt :: Re -> Text
-    templateOpt r = "(" <> templateRe r <> ")?"
-
     templateRe :: Re -> Text
-    templateRe Eps = ""
-    templateRe (Any r) = "[.]*" <> templateRe r
-    templateRe (Chr c r) =
-      let chr '/' = "/"
-          chr c | isAscii c && isAlphaNum c = [c]
-          chr c = "\\x" ++ show (fromEnum c) in
-      Text.pack (chr c) <> templateRe r
-    templateRe (Alt Eps r) = templateOpt r
-    templateRe (Alt r Eps) = templateOpt r
-    templateRe (Alt a b) = "(" <> templateRe a <> "|" <> templateRe b <> ")"
+    templateRe = Text.pack . show
 
     addPathMatcher :: Matcher -> Envoy.RouteMatch -> Envoy.RouteMatch
     addPathMatcher (Exact t) msg = msg & field @"path" .~ t
@@ -242,7 +229,11 @@ envoyRoute dsts Rule{..} = defMessage
     addHeaderMatcher :: Matcher -> Envoy.HeaderMatcher -> Envoy.HeaderMatcher
     addHeaderMatcher (Exact t) msg = msg & field @"exactMatch" .~ t
     addHeaderMatcher (Prefix t) msg = msg & field @"prefixMatch" .~ t
-    addHeaderMatcher (Template _) _ = error "unexpected header template"
+    addHeaderMatcher (Template t) msg = msg
+      & field @"safeRegexMatch" .~ (defMessage
+        & field @"regex" .~ templateRe t
+        & field @"googleRe2" .~ defMessage
+      )
 
 uint32 :: Integral n => n -> Google.UInt32Value
 uint32 n = defMessage & field @"value" .~ fromIntegral n

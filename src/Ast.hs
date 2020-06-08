@@ -115,6 +115,7 @@ data Condition
 data Rule = Rule
   { headers :: Map Text Re
   , action :: Maybe Text }
+  deriving Show
 
 listenerRules :: Listener Routes -> IO (Listener [Rule])
 listenerRules l@Listener{..} = fmap f (routingRules http)
@@ -124,12 +125,16 @@ listenerRules l@Listener{..} = fmap f (routingRules http)
 data DecisionTree
   = Action (Maybe Text)
   | Select Text [(Re, DecisionTree)]
-  deriving Eq
+  deriving (Show, Eq)
 
 decisionTree :: Rule -> DecisionTree
 decisionTree Rule{..} = M.foldrWithKey f (Action action) headers
   where
     f name re dt = Select name [(re, dt)]
+
+decisionTreeFromList :: [Rule] -> DecisionTree
+decisionTreeFromList [] = Action Nothing
+decisionTreeFromList (h:t) = foldl orElseRule (decisionTree h) t
 
 orElseRule :: DecisionTree -> Rule -> DecisionTree
 orElseRule a@(Action _) _ = a
@@ -137,13 +142,13 @@ orElseRule s@(Select n dts) r@Rule{..} =
   case M.minViewWithKey headers of
     Nothing ->
       let f (re, dt) = (re, dt `orElseRule` r) in
-      Select n (map f ((always, Action action) : dts))
+      Select n (map f dts ++ [(always, Action action)])
     Just ((n', re'), headers') | n' < n ->
       Select n' [(re', decisionTree (Rule headers' action)), (always, s)]
     Just ((n', _), _) | n' > n ->
-      Select n ((always, decisionTree r) : dts)
+      Select n (dts ++ [(always, decisionTree r)])
     Just ((n', re'), headers') {- | n' == n -} ->
-      Select n ((re', decisionTree $ Rule headers' action) : dts)
+      Select n (dts ++ [(re', decisionTree (Rule headers' action))]) -- FIXME
 
 decisionRules :: DecisionTree -> [Rule]
 decisionRules = f M.empty
@@ -179,7 +184,7 @@ mergeAdjacent (Select n dts) = Select n dts'
 
 routingRules :: Routes -> IO [Rule]
 routingRules rs =
-  openApiRoutes rs >>= fmap optimize . foldRules emptyRule . cnst . neg . cnd . alt
+  openApiRoutes rs >>= {- FIXME fmap optimize . -} foldRules emptyRule . cnst . neg . cnd . alt
   where
     emptyRule :: Rule
     emptyRule = Rule M.empty Nothing
@@ -188,10 +193,9 @@ routingRules rs =
     removeAlways Rule{..} = Rule (M.filter (/= always) headers) action
 
     optimize :: [Rule] -> [Rule]
-    optimize [] = []
-    optimize (h:t) =
-      map removeAlways . decisionRules . mergeAdjacent . removeUnreachable
-        $ foldl orElseRule (decisionTree h) t
+    optimize =
+      -- map removeAlways . decisionRules . mergeAdjacent . removeUnreachable . decisionTreeFromList
+      decisionRules . decisionTreeFromList
 
     openApiCondition :: Condition -> IO Condition
     openApiCondition (OpenApi fp) =

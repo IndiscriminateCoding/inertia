@@ -1,5 +1,6 @@
 module Re where
 
+import Data.Char( isAlphaNum, isAscii )
 import Data.Maybe( listToMaybe )
 import Data.Text( Text )
 
@@ -10,7 +11,19 @@ data Re
   | Any Re
   | Chr Char Re
   | Alt Re Re
-  deriving (Eq, Show)
+  deriving Eq
+
+instance Show Re where
+  show Eps = ""
+  show (Any r) = "[.]*" <> show r
+  show (Chr c r) =
+    let chr '/' = "/"
+        chr c | isAscii c && isAlphaNum c = [c]
+        chr c = "\\x" ++ show (fromEnum c) in
+    chr c <> show r
+  show (Alt Eps r) = "(" <> show r <> ")?"
+  show (Alt r Eps) = "(" <> show r <> ")?"
+  show (Alt a b) = "(" <> show a <> "|" <> show b <> ")"
 
 literal :: Text -> Re
 literal = T.foldr Chr Eps
@@ -23,6 +36,7 @@ always = Any Eps
 
 alternate :: Re -> Re -> Re
 alternate a b | a == b = a
+alternate a b | a == always || b == always = always
 alternate a b = Alt a b
 
 merge :: Re -> Re -> Maybe Re
