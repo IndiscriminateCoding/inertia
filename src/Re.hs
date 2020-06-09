@@ -15,7 +15,7 @@ data Re
 
 instance Show Re where
   show Eps = ""
-  show (Any r) = "[.]*" <> show r
+  show (Any r) = "([.]*)" <> show r
   show (Chr c r) =
     let chr '/' = "/"
         chr c | isAscii c && isAlphaNum c = [c]

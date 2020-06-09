@@ -165,13 +165,14 @@ envoyRoutes dsts routes = defMessage
 data Matcher = Exact Text | Prefix Text | Template Re
 
 matcher :: Re -> Matcher
-matcher Eps = Exact ""
+matcher (Chr c Eps) = Exact (Text.singleton c)
+matcher (Chr c (Any Eps)) = Prefix (Text.singleton c)
 matcher t@(Chr c r) =
   case matcher r of
     Exact t -> Exact (Text.cons c t)
     Prefix t -> Prefix (Text.cons c t)
     Template _ -> Template t
-matcher (Any Eps) = Prefix ""
+matcher t@Eps = Template t
 matcher t@(Any _) = Template t
 matcher t@(Alt _ _) = Template t
 
