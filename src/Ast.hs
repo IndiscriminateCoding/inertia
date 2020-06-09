@@ -189,22 +189,16 @@ routingRules rs =
     alt NoRoute = NoRoute
     alt d@(Dst _) = d
     alt (When i t e) =
-      case mergeWith (\a b -> Just (alternate a b)) (alternatives i) of
-        Nothing -> e
-        Just alts ->
-          alt t & \t ->
-          alt e & \e ->
-            foldr (\c a -> When c t a) e alts
+      alt t & \t ->
+      alt e & \e ->
+        foldr (\c a -> When c t a) e (alternatives i)
 
     cnd NoRoute = NoRoute
     cnd d@(Dst _) = d
     cnd (When i t e) =
-      case mergeWith merge (conditions i) of
-        Nothing -> e
-        Just cnds ->
-          cnd t & \t ->
-          cnd e & \e ->
-            foldr (\c a -> When c a e) t cnds
+      cnd t & \t ->
+      cnd e & \e ->
+        foldr (\c a -> When c a e) t (conditions i)
 
     neg NoRoute = NoRoute
     neg d@(Dst _) = d
@@ -220,16 +214,6 @@ routingRules rs =
     cnst (When Always e _) = e
     cnst (When Never _ e) = e
     cnst (When i t e) = When i (cnst t) (cnst e)
-
-    mergeWith :: (Re -> Re -> Maybe Re) -> [Condition] -> Maybe [Condition]
-    mergeWith f cs = do
-      let g (matches, conditions) (Match n r) | Just r' <- M.lookup n matches = do
-            r <- f r r'
-            pure (M.insert n r matches, conditions)
-          g (matches, conditions) (Match n r) = pure (M.insert n r matches, conditions)
-          g (matches, conditions) c = pure (matches, c:conditions)
-      (matches, conditions) <- foldlM g (M.empty, []) cs
-      pure (map (uncurry Match) (M.toList matches) ++ conditions)
 
     -- eliminate Or constructor and returns possible alternatives
     alternatives :: Condition -> [Condition]
