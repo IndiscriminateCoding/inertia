@@ -336,8 +336,8 @@ asCondition = do
   openapi <- keyMay "openapi" (allowedKeys ["file"] >> A.key "file" asString)
   case () of
     _ | Just n <- not -> allowedKeys ["not"] $> Not n
-    _ | Just (x, xs) <- all -> allowedKeys ["all"] $> foldl' And x xs
-    _ | Just (x, xs) <- any -> allowedKeys ["any"] $> foldl' Or x xs
+    _ | Just (x, xs) <- all -> allowedKeys ["all"] $> foldl' both x xs
+    _ | Just (x, xs) <- any -> allowedKeys ["any"] $> foldl' oneOf x xs
     _ | Just a <- authority -> allowedKeys ["authority"] $> Match ":authority" a
     _ | Just m <- method -> allowedKeys ["method"] $> Match ":method" m
     _ | Just p <- path -> allowedKeys ["path"] $> Match ":path" p

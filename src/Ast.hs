@@ -3,11 +3,12 @@ module Ast where
 import Data.Foldable( foldlM )
 import Data.Function( (&) )
 import Data.Map.Strict( Map )
-import Data.Maybe( isJust )
+import Data.Maybe( isJust, maybe )
 import Data.Text( Text )
 
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
+import qualified System.Log.Logger as L
 
 import Duration( Duration )
 import OpenApi( Endpoint( Endpoint ), parseFile )
@@ -113,6 +114,15 @@ data Condition
   deriving (Eq, Show)
 
 both :: Condition -> Condition -> Condition
+both (Match n r) (Match n' r') | n == n' = maybe Never (Match n) (merge r r')
+both x (And a b) =
+  case both x a of
+    And _ _ ->
+      case both x b of
+        And _ _ -> And x (And a b)
+        y -> both a y
+    y -> both y b
+both a@(And _ _) b = both b a
 both Never _ = Never
 both _ Never = Never
 both Always a = a
@@ -120,6 +130,15 @@ both a Always = a
 both a b = And a b
 
 oneOf :: Condition -> Condition -> Condition
+oneOf (Match n r) (Match n' r') | n == n' = Match n (alternate r r')
+oneOf x (Or a b) =
+  case oneOf x a of
+    Or _ _ ->
+      case oneOf x b of
+        Or _ _ -> Or x (Or a b)
+        y -> oneOf a y
+    y -> oneOf y b
+oneOf a@(And _ _) b = oneOf b a
 oneOf Always _ = Always
 oneOf _ Always = Always
 oneOf Never a = a
@@ -137,11 +156,23 @@ listenerRules l@Listener{..} = fmap f (routingRules http)
     f rs = l { http = rs }
 
 routingRules :: Routes -> IO [Rule]
-routingRules rs =
-  openApiRoutes rs >>= foldRules emptyRule . cnst . neg . cnd . alt . simplifyWhen
+routingRules rs = do
+  rs <- openApiRoutes rs
+  rules <- foldRules emptyRule . cnst . neg . cnd . alt . branching . simplifyWhen $ rs
+  L.debugM "Ast" (show (length rules) <> " routes total")
+  pure rules
   where
     emptyRule :: Rule
     emptyRule = Rule M.empty Nothing
+
+    branching NoRoute = NoRoute
+    branching d@(Dst _) = d
+    branching (When i t e) =
+      branching t & \t ->
+      branching e & \e ->
+      let tbl = map conditions (alternatives i)
+          c = foldr oneOf Never (map (foldr both Always) tbl) in
+      When i t e
 
     openApiCondition :: Condition -> IO Condition
     openApiCondition (OpenApi fp) =
@@ -194,8 +225,8 @@ routingRules rs =
     foldRules nr (When c _ _) = error ("[routingRules] unexpected condition: " ++ show c)
 
     simplifyWhen (When c t e) =
-      let f (When c' t' e') e | e == e' = simplifyWhen (When (And c c') t' e)
-          f t (When c' t' e') | t == t' = simplifyWhen (When (Or c c') t e')
+      let f (When c' t' e') e | e == e' = simplifyWhen (When (both c c') t' e)
+          f t (When c' t' e') | t == t' = simplifyWhen (When (oneOf c c') t e')
           f t e = When c t e in
       f (simplifyWhen t) (simplifyWhen e)
     simplifyWhen x = x
@@ -225,8 +256,8 @@ routingRules rs =
 
     cnst NoRoute = NoRoute
     cnst d@(Dst _) = d
-    cnst (When Always e _) = e
-    cnst (When Never _ e) = e
+    cnst (When Always e _) = cnst e
+    cnst (When Never _ e) = cnst e
     cnst (When i t e) = When i (cnst t) (cnst e)
 
     -- eliminate Or constructor and returns possible alternatives

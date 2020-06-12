@@ -169,23 +169,23 @@ listeners:
             file: /tmp/petstore.yaml
       then:
         destination: my-service
-    # - when:
-    #     authority: { value: google.com }
-    #   then:
-    #     # conditions could be nested
-    #   - when:
-    #       path: { prefix: /search }
-    #     then:
-    #     - destination: google
-    # - when:
-    #     all:
-    #     - method: { value: GET }
-    #     - path:
-    #         prefix: /my-svc/
-    #     - not:
-    #         header:
-    #           name: x-route-to
-    #           prefix: 'proxy-'
-    #   then:
-    #     # you could omit array when using single element
-    #     destination: my-service
+    - when:
+        authority: { value: google.com }
+      then:
+        # conditions could be nested
+      - when:
+          path: { prefix: /search }
+        then:
+        - destination: google
+    - when:
+        all:
+        - method: { value: GET }
+        - path:
+            prefix: /my-svc/
+        - not:
+            header:
+              name: x-route-to
+              prefix: 'proxy-'
+      then:
+        # you could omit array when using single element
+        destination: my-service

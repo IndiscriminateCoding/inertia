@@ -36,10 +36,10 @@ main = do
   Opts{..} <- O.execParser optsParser
   Config{..} <- fileConfig config
   let AdsConfig{..} = adsConfig
-  rules <- traverse listenerRules listeners
   stderrHandler <- fmap
     (flip LH.setFormatter $ LF.simpleLogFormatter "[$time | $prio | $loggername] $msg")
     (LH.streamHandler stderr L.DEBUG)
-  _ <- L.updateGlobalLogger L.rootLoggerName (L.setLevel L.DEBUG . L.setHandlers [stderrHandler])
-  _ <- L.infoM "Main" ("Running ADS on " ++ host ++ " port " ++ show port)
+  L.updateGlobalLogger L.rootLoggerName (L.setLevel L.DEBUG . L.setHandlers [stderrHandler])
+  L.infoM "Main" ("Running ADS on " ++ host ++ " port " ++ show port)
+  rules <- traverse listenerRules listeners
   runServer adsConfig rules destinations
