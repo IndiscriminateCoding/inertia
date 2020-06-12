@@ -112,6 +112,20 @@ data Condition
   | OpenApi FilePath
   deriving (Eq, Show)
 
+both :: Condition -> Condition -> Condition
+both Never _ = Never
+both _ Never = Never
+both Always a = a
+both a Always = a
+both a b = And a b
+
+oneOf :: Condition -> Condition -> Condition
+oneOf Always _ = Always
+oneOf _ Always = Always
+oneOf Never a = a
+oneOf a Never = a
+oneOf a b = Or a b
+
 data Rule = Rule
   { headers :: Map Text Re
   , action :: Maybe Text }
@@ -140,11 +154,11 @@ routingRules rs =
     openApiCondition (Or a b) = do
       a <- openApiCondition a
       b <- openApiCondition b
-      pure (Or a b)
+      pure (oneOf a b)
     openApiCondition (And a b) = do
       a <- openApiCondition a
       b <- openApiCondition b
-      pure (And a b)
+      pure (both a b)
     openApiCondition c = pure c
 
     openApiRoutes :: Routes -> IO Routes
@@ -225,7 +239,7 @@ routingRules rs =
     alternatives (And a b) = do
       a <- alternatives a
       b <- alternatives b
-      pure (And a b)
+      pure (both a b)
     alternatives (Or a b) = alternatives a ++ alternatives b
 
     -- eliminate And constructor and returns contained conditions
@@ -243,8 +257,8 @@ routingRules rs =
     simplifyNegation Never = Never
     simplifyNegation Always = Always
     simplifyNegation c@(OpenApi _) = c
-    simplifyNegation (And a b) = And (simplifyNegation a) (simplifyNegation b)
-    simplifyNegation (Or a b) = Or (simplifyNegation a) (simplifyNegation b)
+    simplifyNegation (And a b) = both (simplifyNegation a) (simplifyNegation b)
+    simplifyNegation (Or a b) = oneOf (simplifyNegation a) (simplifyNegation b)
     simplifyNegation (Not Always) = Never
     simplifyNegation (Not Never) = Always
     simplifyNegation (Not (Not c)) = simplifyNegation c
