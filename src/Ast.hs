@@ -138,7 +138,7 @@ oneOf x (Or a b) =
         Or _ _ -> Or x (Or a b)
         y -> oneOf a y
     y -> oneOf y b
-oneOf a@(And _ _) b = oneOf b a
+oneOf a@(Or _ _) b = oneOf b a
 oneOf Always _ = Always
 oneOf _ Always = Always
 oneOf Never a = a
@@ -158,12 +158,38 @@ listenerRules l@Listener{..} = fmap f (routingRules http)
 routingRules :: Routes -> IO [Rule]
 routingRules rs = do
   rs <- openApiRoutes rs
-  rules <- foldRules emptyRule . cnst . neg . cnd . alt . branching . simplifyWhen $ rs
+  rules <- foldRules emptyRule
+    . predict []
+    . cnst
+    . neg
+    . cnd
+    . alt
+    . branching
+    . simplifyWhen
+    $ rs
   L.debugM "Ast" (show (length rules) <> " routes total")
   pure rules
   where
     emptyRule :: Rule
     emptyRule = Rule M.empty Nothing
+
+{-    dump n NoRoute = putStrLn $ replicate n ' ' ++ "NoRoute"
+    dump n (Dst d) = putStrLn $ replicate n ' ' ++ "[" ++ show d ++ "]"
+    dump n (When i t e) = do
+      putStrLn $ replicate n ' ' ++ "When(" ++ show i ++ ")"
+      dump (n + 1) t
+      putStrLn $ replicate n ' ' ++ "Else"
+      dump (n + 1) e-}
+
+    predict _ NoRoute = NoRoute
+    predict _ d@(Dst _) = d
+    predict env (When i t e) =
+      predict (i : env) t & \t ->
+      predict (Not i : env) e & \e ->
+      case () of
+        _ | elem i env -> t
+        _ | elem (Not i) env -> e
+        _ ->  When i t e
 
     branching NoRoute = NoRoute
     branching d@(Dst _) = d
@@ -216,7 +242,7 @@ routingRules rs = do
               Nothing -> Just m
               Just m' -> merge m m' in
       case added of
-        Nothing -> pure []
+        Nothing -> foldRules nr e
         Just added -> do
           t <- foldRules (nr { headers = M.insert lcname added (headers nr) }) t
           e <- foldRules nr e
