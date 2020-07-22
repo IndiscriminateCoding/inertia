@@ -2,7 +2,7 @@ GEN=./api
 ENVOY_TAG=v1.14.1
 
 build:
-	stack build --fast && stack run -- -c config-example.yaml
+	stack build --fast # && stack run -- -c config-example.yaml
 
 download:
 	git clone -b common-protos-1_3_1 \
