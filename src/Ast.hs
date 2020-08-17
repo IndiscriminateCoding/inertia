@@ -14,11 +14,8 @@ import Duration( Duration )
 import OpenApi( Endpoint( Endpoint ), parseFile )
 import Re
 
-data Discovery = Static | StrictDns | LogicalDns
-
 data Destination = Destination
-  { discovery :: Discovery
-  , hosts :: [(Text, Int)]
+  { hosts :: [Host]
   , connectTimeout :: Duration
   , loadBalancer :: LoadBalancer
   , circuitBreaker :: Maybe CircuitBreaker
@@ -29,6 +26,11 @@ data Destination = Destination
   , httpOptions :: HttpOptions
   , requestTimeout :: Maybe Duration
   , retryPolicy :: Maybe RetryPolicy }
+
+data Host
+  = Static Text Int
+  | Dns Text Int
+  | DnsSrv Text
 
 data LoadBalancer = LeastRequest Int | Random | RoundRobin
 

@@ -389,14 +389,13 @@ renderClusters ds = defMessage
         ) hs
       ]
 
-    clusterType Static = Envoy.Cluster'STATIC
-    clusterType StrictDns = Envoy.Cluster'STRICT_DNS
-    clusterType LogicalDns = Envoy.Cluster'LOGICAL_DNS
-
     addCluster :: Text -> Destination -> Envoy.Cluster -> Envoy.Cluster
-    addCluster name Destination{..} c = c
-      & field @"type'" .~ clusterType discovery
-      & field @"loadAssignment" .~ loadAssignment name hosts
+    addCluster name Destination{..} c =
+      let static (Static h p) = (h, p)
+          static _ = error "unresolved non-static destination(s)" in
+      c
+        & field @"type'" .~ Envoy.Cluster'STATIC
+        & field @"loadAssignment" .~ loadAssignment name (map static hosts)
 
 protobufDuration :: Duration -> Google.Duration
 protobufDuration (Duration ms) = defMessage

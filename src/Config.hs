@@ -147,8 +147,7 @@ defaultHttpOptions = HttpOptions (seconds 600) H1
 asDestination :: Monad m => ParseT Text m Destination
 asDestination = do
   allowedKeys
-    [ "discovery"
-    , "hosts"
+    [ "hosts"
     , "connect-timeout"
     , "load-balancer"
     , "circuit-breaker"
@@ -159,7 +158,6 @@ asDestination = do
     , "http-options"
     , "request-timeout"
     , "retry-policy" ]
-  discovery <- A.key "discovery" asDiscovery
   hosts <- A.keyOrDefault "hosts" [] (asOptList asHost)
   connectTimeout <- A.keyOrDefault "connect-timeout" (seconds 5) asDuration
   loadBalancer <- A.keyOrDefault "load-balancer" (LeastRequest 2) asLoadBalancer
@@ -172,12 +170,13 @@ asDestination = do
   requestTimeout <- A.keyMay "request-timeout" asDuration
   retryPolicy <- A.keyMay "retry-policy" asRetryPolicy
   pure Destination{..}
-  where
-    asHost = do
-      allowedKeys ["host", "port"]
-      host <- A.key "host" asText
-      port <- A.key "port" asPort
-      pure (host, port)
+
+asHost :: Monad m => ParseT Text m Host
+asHost = do
+  allowedKeys ["host", "port"]
+  host <- A.key "host" asText
+  port <- A.key "port" asPort
+  pure (Static host port)
 
 asRetryPolicy :: Monad m => ParseT Text m RetryPolicy
 asRetryPolicy = do
@@ -281,14 +280,6 @@ asCircuitBreaker = do
   mreq <- A.keyMay "max-requests" asIntegral
   mret <- A.keyMay "max-retries" asIntegral
   pure (CircuitBreaker mc mp mreq mret)
-
-asDiscovery :: Monad m => ParseT Text m Discovery
-asDiscovery = asText >>= f
-  where
-    f "static" = pure Static
-    f "strict-dns" = pure StrictDns
-    f "logical-dns" = pure LogicalDns
-    f s = throwCustomError ("can't parse discovery: " <> s)
 
 data ConfigRoute = ConfigDst Text | ConfigWhen Condition [ConfigRoute]
 
